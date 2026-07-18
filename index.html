@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Dragonrider — Fire and Blood</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<!-- permanent subtle vignette -->
+<div id="vignette"></div>
+<!-- red crash flash -->
+<div id="flash"></div>
+
+<!-- crosshair -->
+<div id="crosshair"><div class="ring"></div><div class="dot"></div></div>
+
+<!-- in-game HUD -->
+<div id="hud">
+  <div id="title">
+    <div class="house">HOUSE OF THE DRAGON</div>
+    <h1>DRAGONRIDER</h1>
+    <div class="words">FIRE AND BLOOD</div>
+  </div>
+
+  <div id="stats">
+    <div class="stat"><label>Airspeed</label><span id="hud-speed">0</span></div>
+    <div class="stat"><label>Altitude</label><span id="hud-alt">0</span></div>
+    <div class="stat"><label>Ships burned</label><span id="hud-score">0</span></div>
+    <div class="stat dim"><label>Deaths</label><span id="hud-deaths">0</span></div>
+  </div>
+
+  <div id="controls">
+    <div><b>MOUSE</b> steer</div>
+    <div><b>W / S</b> speed</div>
+    <div><b>SHIFT</b> boost</div>
+    <div><b>SPACE / LMB</b> dracarys</div>
+    <div><b>B</b> roar &nbsp; <b>M</b> sound</div>
+  </div>
+
+  <div id="heat"><div id="heat-fill"></div><label>DRACARYS</label></div>
+
+  <div id="toast"></div>
+</div>
+
+<!-- start menu -->
+<div id="menu">
+  <div class="menu-inner">
+    <div class="menu-house">A FLIGHT OVER BLACKWATER BAY</div>
+    <h1 class="menu-title">DRAGONRIDER</h1>
+    <div class="menu-sub">House of the Dragon &mdash; take the reins, speak the word, and burn.</div>
+
+    <div class="dragons">
+      <div class="dragon-card" data-dragon="caraxes">
+        <div class="dc-swatch" style="background:#8f1d22"></div>
+        <div class="dc-name">CARAXES</div>
+        <div class="dc-epithet">The Blood Wyrm</div>
+        <div class="dc-rider">mount of Daemon Targaryen</div>
+      </div>
+      <div class="dragon-card" data-dragon="syrax">
+        <div class="dc-swatch" style="background:#a07a28"></div>
+        <div class="dc-name">SYRAX</div>
+        <div class="dc-epithet">The Golden Queen</div>
+        <div class="dc-rider">mount of Rhaenyra Targaryen</div>
+      </div>
+      <div class="dragon-card" data-dragon="vhagar">
+        <div class="dc-swatch" style="background:#4c5546"></div>
+        <div class="dc-name">VHAGAR</div>
+        <div class="dc-epithet">Queen of All Dragons</div>
+        <div class="dc-rider">mount of Aemond Targaryen</div>
+      </div>
+    </div>
+
+    <div class="menu-controls">
+      MOUSE steer &nbsp;&middot;&nbsp; W/S speed &nbsp;&middot;&nbsp; SHIFT boost &nbsp;&middot;&nbsp; SPACE breathe fire &nbsp;&middot;&nbsp; ESC pause
+    </div>
+    <div class="menu-hint">Burn the fleet in the bay. Mind the mountains and the sea.</div>
+    <div class="menu-choose">— choose your dragon —</div>
+  </div>
+</div>
+
+<!-- pause overlay -->
+<div id="pause"><div>PAUSED</div><span>click to take the reins again</span></div>
+
+<script src="js/vendor/three.min.js"></script>
+<script src="js/noise.js"></script>
+<script src="js/world.js"></script>
+<script src="js/dragon.js"></script>
+<script src="js/fire.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

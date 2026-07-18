@@ -1,0 +1,137 @@
+/* ---- Dragonrider: Fire and Blood — Targaryen theme ---- */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: #0a0908;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #e8dcc4;
+  user-select: none;
+  cursor: default;
+}
+
+#scene { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* vignette + flash */
+#vignette {
+  position: fixed; inset: 0; pointer-events: none; z-index: 2;
+  background: radial-gradient(ellipse at center, transparent 55%, rgba(5,2,2,.55) 100%);
+}
+#flash {
+  position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0;
+  background: radial-gradient(ellipse at center, rgba(200,30,20,.35), rgba(120,5,5,.8));
+  transition: opacity .55s ease-out;
+}
+
+/* crosshair */
+#crosshair {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%,-50%);
+  z-index: 5; opacity: 0; transition: opacity .3s; pointer-events: none;
+}
+body.playing #crosshair { opacity: .9; }
+#crosshair .ring {
+  width: 34px; height: 34px; border: 1px solid rgba(232,220,196,.75);
+  border-radius: 50%; position: absolute; left: -17px; top: -17px;
+  box-shadow: 0 0 8px rgba(0,0,0,.6), inset 0 0 8px rgba(0,0,0,.4);
+  transition: border-color .15s, box-shadow .15s;
+}
+#crosshair .dot {
+  width: 3px; height: 3px; background: #e8dcc4; border-radius: 50%;
+  position: absolute; left: -1.5px; top: -1.5px;
+}
+#crosshair.firing .ring {
+  border-color: #ff5a1f;
+  box-shadow: 0 0 14px rgba(255,90,31,.8), inset 0 0 10px rgba(255,90,31,.5);
+}
+
+/* HUD */
+#hud { position: fixed; inset: 0; pointer-events: none; z-index: 4; opacity: 0; transition: opacity .5s; }
+body.playing #hud { opacity: 1; }
+
+#title { position: absolute; top: 18px; left: 24px; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+#title .house { font-size: 10px; letter-spacing: 5px; color: #c1121f; font-weight: bold; }
+#title h1 { font-size: 26px; letter-spacing: 7px; color: #e8dcc4; font-weight: normal; }
+#title .words { font-size: 10px; letter-spacing: 4px; color: #a89878; font-style: italic; }
+
+#stats { position: absolute; left: 24px; bottom: 22px; text-shadow: 0 1px 3px rgba(0,0,0,.9); }
+.stat { display: flex; align-items: baseline; gap: 10px; margin-top: 4px; }
+.stat label { font-size: 10px; letter-spacing: 2px; color: #a89878; width: 96px; text-transform: uppercase; }
+.stat span { font-size: 20px; color: #f0e6d0; min-width: 40px; }
+.stat.dim span, .stat.dim label { color: #77695a; }
+.stat.dim span { font-size: 15px; }
+
+#controls {
+  position: absolute; right: 24px; bottom: 22px; text-align: right;
+  font-size: 11px; letter-spacing: 1px; color: #a89878; line-height: 1.7;
+  text-shadow: 0 1px 3px rgba(0,0,0,.9);
+}
+#controls b { color: #e0cfa8; }
+
+#heat {
+  position: absolute; left: 50%; bottom: 30px; transform: translateX(-50%);
+  width: 240px; height: 10px; border: 1px solid rgba(232,220,196,.35);
+  background: rgba(10,5,5,.55); box-shadow: 0 1px 4px rgba(0,0,0,.7);
+}
+#heat label {
+  position: absolute; top: -19px; width: 100%; text-align: center;
+  font-size: 9px; letter-spacing: 5px; color: #c9a06a;
+}
+#heat-fill {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #7a1508, #e04a10, #ffb03a);
+  transition: width .08s linear;
+}
+
+#toast {
+  position: absolute; left: 50%; bottom: 90px; transform: translateX(-50%);
+  font-size: 17px; font-style: italic; letter-spacing: 1px; color: #f0e2c8;
+  text-shadow: 0 1px 6px rgba(0,0,0,.9); opacity: 0; transition: opacity .4s;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; }
+
+/* ---- menu ---- */
+#menu {
+  position: fixed; inset: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(8,4,4,.62) 0%, rgba(5,2,3,.92) 100%);
+  transition: opacity .6s;
+}
+#menu.hidden { opacity: 0; pointer-events: none; }
+.menu-inner { text-align: center; max-width: 860px; padding: 20px; }
+.menu-house { font-size: 11px; letter-spacing: 7px; color: #c1121f; font-weight: bold; }
+.menu-title {
+  font-size: 64px; letter-spacing: 18px; font-weight: normal; margin: 8px 0 4px;
+  color: #f0e6d0; text-shadow: 0 2px 18px rgba(193,18,31,.45), 0 1px 3px #000;
+}
+.menu-sub { font-size: 14px; font-style: italic; color: #b8a888; margin-bottom: 34px; }
+
+.dragons { display: flex; gap: 18px; justify-content: center; margin-bottom: 30px; }
+.dragon-card {
+  width: 220px; padding: 18px 14px 14px; cursor: pointer; pointer-events: auto;
+  background: rgba(14,8,8,.72); border: 1px solid rgba(193,18,31,.25);
+  transition: transform .18s, border-color .18s, box-shadow .18s;
+}
+.dragon-card:hover {
+  transform: translateY(-4px); border-color: #c1121f;
+  box-shadow: 0 6px 26px rgba(193,18,31,.35);
+}
+.dc-swatch { width: 100%; height: 7px; margin-bottom: 13px; box-shadow: 0 0 10px rgba(0,0,0,.7); }
+.dc-name { font-size: 21px; letter-spacing: 5px; color: #f0e6d0; }
+.dc-epithet { font-size: 12px; font-style: italic; color: #c9a06a; margin: 3px 0 7px; }
+.dc-rider { font-size: 11px; color: #8a7c66; }
+
+.menu-controls { font-size: 12px; letter-spacing: 2px; color: #b8a888; margin-bottom: 10px; }
+.menu-hint { font-size: 12px; font-style: italic; color: #8a7c66; margin-bottom: 26px; }
+.menu-choose { font-size: 11px; letter-spacing: 4px; color: #c1121f; }
+
+/* ---- pause ---- */
+#pause {
+  position: fixed; inset: 0; z-index: 8; display: none;
+  align-items: center; justify-content: center; flex-direction: column;
+  background: rgba(5,2,3,.55); cursor: pointer;
+}
+#pause.visible { display: flex; }
+#pause div { font-size: 40px; letter-spacing: 14px; color: #f0e6d0; text-shadow: 0 2px 12px #000; }
+#pause span { font-size: 13px; font-style: italic; color: #b8a888; margin-top: 8px; }
