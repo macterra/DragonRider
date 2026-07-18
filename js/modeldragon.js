@@ -25,7 +25,6 @@ class ModelDragon {
 
     this.ready = false;
     this.schemeKey = 'caraxes';
-    this.firing = false;
     this.mouthForward = 1.6;
 
     this.buildRider();
@@ -74,7 +73,6 @@ class ModelDragon {
     this.mixer = new THREE.AnimationMixer(model);
     const clip = re => gltf.animations.find(c => re.test(c.name));
     this.flyAction = this.mixer.clipAction(clip(/Flying/i) || gltf.animations[0]);
-    this.attackAction = this.mixer.clipAction(clip(/Attack/i) || gltf.animations[0]);
     this.flyAction.play();
 
     this.ready = true;
@@ -138,18 +136,6 @@ class ModelDragon {
     let glide = Math.min(1, Math.max(0, (s.speed - 32) / 45));
     if (s.pitch > 0.12) glide *= 0.4;
     this.flyAction.timeScale = THREE.MathUtils.lerp(1.25, 0.25, glide);
-
-    // fire-breathing attack animation while the trigger is held
-    if (s.firing !== this.firing) {
-      this.firing = s.firing;
-      if (this.firing) {
-        this.attackAction.reset().setLoop(THREE.LoopRepeat, Infinity).fadeIn(0.18).play();
-        this.flyAction.fadeOut(0.18);
-      } else {
-        this.flyAction.reset().fadeIn(0.25).play();
-        this.attackAction.fadeOut(0.25);
-      }
-    }
 
     this.mixer.update(dt);
 
