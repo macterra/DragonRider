@@ -20,8 +20,9 @@ scene.fog = new THREE.FogExp2(0xd9a066, 0.0005);
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 12000);
 
 const world = new World(scene);
-const dragon = new Dragon(scene, 'caraxes');
-const aiDragon = new Dragon(scene, 'seasmoke');   // another dragon circling the Dragonmont
+const dragon = new ModelDragon(scene);
+const aiDragon = new ModelDragon(scene);          // another dragon circling the Dragonmont
+aiDragon.setScheme('seasmoke');
 aiDragon.group.scale.setScalar(0.8);
 
 const firePool = new ParticlePool(scene, 700, true);    // additive flames
@@ -567,7 +568,7 @@ if (autoDragon) {
 
   // test hook: synchronously simulate N seconds before the first render
   const warp = parseFloat(urlParams.get('warp') || '0');
-  if (warp > 0) {
+  const doWarp = () => {
     for (let i = 0; i < warp * 20; i++) {
       if (burnTest) input.my = 0.3;   // hold the dive through the decay
       updateFlight(0.05);
@@ -585,6 +586,8 @@ if (autoDragon) {
     updateHud();
     if (DEBUG && debugEl) {
       debugEl.textContent = JSON.stringify({
+        dready: dragon.ready, bones: [!!dragon.bodyBone, !!dragon.headBone],
+        rider: dragon.rider ? dragon.rider.position.toArray().map(v => +v.toFixed(1)) : null,
         warped: warp, firing: state.firing, heat: Math.round(state.heat),
         fire: firePool.count, pos: state.pos.toArray().map(v => Math.round(v)),
         ship0: world.ships[0].state,
@@ -603,6 +606,16 @@ if (autoDragon) {
       camPos.copy(state.pos).addScaledVector(right, sideDist)
         .addScaledVector(fwd, sideDist * (urlParams.get('front') ? 0.9 : 0.35))
         .add(new THREE.Vector3(0, sideDist * 0.18, 0));
+    }
+  };
+
+  // the dragon GLB loads async — wait for it before warping
+  if (warp > 0) {
+    if (dragon.ready) doWarp();
+    else {
+      const waitReady = setInterval(() => {
+        if (dragon.ready) { clearInterval(waitReady); doWarp(); }
+      }, 50);
     }
   }
 }
