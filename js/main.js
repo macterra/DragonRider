@@ -617,7 +617,8 @@ if (autoDragon) {
     updateHud();
     if (DEBUG && debugEl) {
       debugEl.textContent = JSON.stringify({
-        dready: dragon.ready, bones: [!!dragon.bodyBone, !!dragon.headBone],
+        dready: dragon.ready, diag: dragon.diag,
+        bones: [!!dragon.spineBone, !!dragon.headBone, !!dragon.fireBone],
         rider: dragon.rider ? dragon.rider.position.toArray().map(v => +v.toFixed(1)) : null,
         warped: warp, firing: state.firing, heat: Math.round(state.heat),
         fire: firePool.count, pos: state.pos.toArray().map(v => Math.round(v)),
