@@ -18,6 +18,95 @@ const WORLD = {
   castle: { x: -170, z: 120 },                  // Dragonstone castle
 };
 
+/* tileable organic detail texture (modulates vertex colors, doubles as bump) */
+function makeDetailTexture() {
+  const S = 512;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#b4b4b4';
+  ctx.fillRect(0, 0, S, S);
+  const blob = (x, y, r, style) => {
+    ctx.fillStyle = style;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 7);
+    ctx.fill();
+  };
+  const wrapBlob = (x, y, r, style) => {
+    for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) blob(x + dx, y + dy, r, style);
+  };
+  // large soft mottling
+  for (let i = 0; i < 260; i++) {
+    const g = 155 + (Math.random() * 60) | 0;
+    wrapBlob(Math.random() * S, Math.random() * S, 6 + Math.random() * 34,
+      `rgba(${g},${g},${g},0.25)`);
+  }
+  // fine speckle
+  for (let i = 0; i < 4200; i++) {
+    const g = 130 + (Math.random() * 100) | 0;
+    wrapBlob(Math.random() * S, Math.random() * S, 0.6 + Math.random() * 2,
+      `rgba(${g},${g},${g},0.5)`);
+  }
+  // cracks / strata
+  ctx.strokeStyle = 'rgba(60,60,60,0.18)';
+  for (let i = 0; i < 34; i++) {
+    ctx.lineWidth = 0.5 + Math.random() * 1.5;
+    let x = Math.random() * S, y = Math.random() * S;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    for (let k = 0; k < 6; k++) { x += (Math.random() - 0.5) * 40; y += (Math.random() - 0.5) * 40; ctx.lineTo(x, y); }
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(300, 300);
+  tex.encoding = THREE.sRGBEncoding;
+  return tex;
+}
+
+/* grayscale noise → tangent-space normal map texture (tileable via wrapped lattice) */
+function makeNormalTexture() {
+  const S = 256, P1 = 16, P2 = 32;
+  const hash = (ix, iy, p) => {
+    ix = ((ix % p) + p) % p; iy = ((iy % p) + p) % p;
+    let n = (Math.imul(ix, 374761393) + Math.imul(iy, 668265263)) | 0;
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+  };
+  const vnoise = (x, y, p) => {
+    const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    const a = hash(ix, iy, p), b = hash(ix + 1, iy, p), c = hash(ix, iy + 1, p), d = hash(ix + 1, iy + 1, p);
+    return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+  };
+  const h = new Float32Array(S * S);
+  for (let y = 0; y < S; y++)
+    for (let x = 0; x < S; x++)
+      h[y * S + x] = vnoise(x * P1 / S, y * P1 / S, P1) * 0.65 +
+                     vnoise(x * P2 / S, y * P2 / S, P2) * 0.35;
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = S;
+  const ctx = cv.getContext('2d');
+  const img = ctx.createImageData(S, S);
+  const at = (x, y) => h[((y + S) % S) * S + ((x + S) % S)];
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const dx = (at(x + 1, y) - at(x - 1, y)) * 2.2;
+      const dy = (at(x, y + 1) - at(x, y - 1)) * 2.2;
+      const inv = 1 / Math.hypot(dx, dy, 1);
+      const i = (y * S + x) * 4;
+      img.data[i]     = (-dx * inv * 0.5 + 0.5) * 255;
+      img.data[i + 1] = (-dy * inv * 0.5 + 0.5) * 255;
+      img.data[i + 2] = (inv * 0.5 + 0.5) * 255;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 /* smoothstep that also works with edge0 > edge1 */
 function sstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -64,13 +153,14 @@ class World {
     this.buildCastle();
     this.buildCity();
     this.buildTrees();
+    this.buildRocks();
     this.buildBirds();
     this.buildShips();
   }
 
   /* ---------------- lights ---------------- */
   buildLights() {
-    const hemi = new THREE.HemisphereLight(0xffdcb0, 0x1c2026, 0.55);
+    const hemi = new THREE.HemisphereLight(0xffdcb0, 0x1c2026, 0.45);
     this.scene.add(hemi);
 
     const sun = new THREE.DirectionalLight(0xffd2a0, 1.25);
@@ -146,7 +236,8 @@ class World {
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
-    this.scene.add(new THREE.Mesh(geo, mat));
+    this.skyMesh = new THREE.Mesh(geo, mat);
+    this.scene.add(this.skyMesh);   // also reused to bake the IBL environment map
   }
 
   /* ---------------- terrain ---------------- */
@@ -198,7 +289,15 @@ class World {
     geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geo.computeVertexNormals();
 
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const detail = makeDetailTexture();
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      map: detail,
+      bumpMap: detail,
+      bumpScale: 0.6,
+      roughness: 0.95,
+      metalness: 0.0,
+    });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     this.scene.add(mesh);
@@ -217,6 +316,7 @@ class World {
       uSky:     { value: new THREE.Color(0xe8a06a) },
       uFogColor:{ value: new THREE.Color(0xc8905e) },
       uFogDensity: { value: 0.00045 },
+      tNormal:  { value: makeNormalTexture() },
     };
     const mat = new THREE.ShaderMaterial({
       transparent: true,
@@ -244,22 +344,26 @@ class World {
       fragmentShader: `
         uniform vec3 uSunDir, uSunColor, uDeep, uShallow, uSky, uFogColor;
         uniform float uFogDensity, uTime;
+        uniform sampler2D tNormal;
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         void main() {
           vec3 V = normalize(cameraPosition - vWorldPos);
-          vec3 N = normalize(vNormal);
+          // two scrolling normal-map layers ripple the surface
+          vec3 n1 = texture2D(tNormal, vWorldPos.xz * 0.012 + vec2(uTime * 0.008, 0.0)).xyz * 2.0 - 1.0;
+          vec3 n2 = texture2D(tNormal, vWorldPos.xz * 0.031 + vec2(0.0, -uTime * 0.011)).xyz * 2.0 - 1.0;
+          vec3 N = normalize(vNormal + vec3(n1.x + n2.x, 0.0, n1.y + n2.y) * 0.18);
           float fres = pow(1.0 - max(dot(V, N), 0.0), 3.0);
           vec3 col = mix(uDeep, uShallow, clamp(N.y * 0.4 + vWorldPos.y * 0.06 + 0.25, 0.0, 1.0));
           col = mix(col, uSky, fres * 0.7);
           vec3 R = reflect(-V, N);
           float spec = pow(max(dot(R, uSunDir), 0.0), 220.0);
           col += uSunColor * spec * 1.6;
-          // whitecap sparkle on wave crests
-          float cap = smoothstep(0.72, 0.97,
-            sin(vWorldPos.x * 0.9 + uTime * 1.3) * sin(vWorldPos.z * 0.8 - uTime * 1.1)
-            + vWorldPos.y * 0.22);
-          col += vec3(0.85, 0.9, 0.95) * cap * 0.18;
+          // organic foam patches drifting on the swells
+          float fn = texture2D(tNormal, vWorldPos.xz * 0.017 + vec2(uTime * 0.004, 0.0)).x * 0.5
+                   + texture2D(tNormal, vWorldPos.xz * 0.041 + vec2(0.0, -uTime * 0.006)).y * 0.5;
+          float cap = smoothstep(0.60, 0.78, fn + vWorldPos.y * 0.05);
+          col += vec3(0.85, 0.9, 0.95) * cap * 0.25;
           float depth = length(cameraPosition - vWorldPos);
           float f = 1.0 - exp(-uFogDensity * uFogDensity * depth * depth);
           col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
@@ -339,9 +443,9 @@ class World {
   /* ---------------- Dragonstone castle ---------------- */
   buildCastle() {
     const g = new THREE.Group();
-    const stone  = new THREE.MeshLambertMaterial({ color: 0x4a4a52 });
-    const dark   = new THREE.MeshLambertMaterial({ color: 0x33333a });
-    const roof   = new THREE.MeshLambertMaterial({ color: 0x23232a });
+    const stone  = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a4a52 });
+    const dark   = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x33333a });
+    const roof   = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x23232a });
 
     const add = (mesh, x, y, z) => {
       mesh.position.set(x, y, z);
@@ -394,13 +498,13 @@ class World {
   buildCity() {
     const g = new THREE.Group();
     const wallMats = [
-      new THREE.MeshLambertMaterial({ color: 0xcbb9a0 }),
-      new THREE.MeshLambertMaterial({ color: 0xb7a48c }),
-      new THREE.MeshLambertMaterial({ color: 0xd8c4a8 }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xcbb9a0 }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xb7a48c }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xd8c4a8 }),
     ];
     const roofMats = [
-      new THREE.MeshLambertMaterial({ color: 0x8a3b2a }),
-      new THREE.MeshLambertMaterial({ color: 0x6e5a3a }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x8a3b2a }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x6e5a3a }),
     ];
     const boxGeo = new THREE.BoxGeometry(1, 1, 1);
     const coneGeo = new THREE.ConeGeometry(1, 1, 4);
@@ -434,8 +538,8 @@ class World {
 
     // the Red Keep on its hill
     const keep = new THREE.Group();
-    const red = new THREE.MeshLambertMaterial({ color: 0x9c4a34 });
-    const redDark = new THREE.MeshLambertMaterial({ color: 0x7a3826 });
+    const red = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x9c4a34 });
+    const redDark = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x7a3826 });
     const kx = c.x + 84, kz = c.z + 26;
     const kh = terrainHeight(kx, kz);
     const kb = new THREE.Mesh(new THREE.BoxGeometry(40, 30, 34), red);
@@ -486,9 +590,9 @@ class World {
     const trunkGeo = new THREE.CylinderGeometry(0.3, 0.55, 3.2, 5);
     const coneGeo = new THREE.ConeGeometry(2.2, 6.5, 6);
     const trunks = new THREE.InstancedMesh(trunkGeo,
-      new THREE.MeshLambertMaterial({ color: 0x4a3626 }), spots.length);
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a3626 }), spots.length);
     const leaves = new THREE.InstancedMesh(coneGeo,
-      new THREE.MeshLambertMaterial({ color: 0xffffff }), spots.length);
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xffffff }), spots.length);
     trunks.castShadow = leaves.castShadow = true;
 
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
@@ -508,6 +612,54 @@ class World {
     });
     if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
     this.scene.add(trunks, leaves);
+  }
+
+  /* ---------------- noise-displaced rocks ---------------- */
+  buildRocks() {
+    const geo = new THREE.IcosahedronGeometry(1, 1);
+    const p = geo.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i);
+      const n = Noise.fbm2(v.x * 1.3 + 5, v.z * 1.3 + v.y + 2, 3);
+      v.multiplyScalar(1 + (n - 0.5) * 0.9);
+      p.setXYZ(i, v.x, v.y * 0.7, v.z);
+    }
+    geo.computeVertexNormals();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6b625a, roughness: 1, metalness: 0 });
+
+    const spots = [];
+    for (const isl of WORLD.islands) {
+      const want = isl.r > 300 ? 70 : 15;
+      let placed = 0, tries = 0;
+      while (placed < want && tries++ < want * 20) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = isl.r * (0.55 + Math.random() * 0.5);
+        const x = isl.x + Math.cos(a) * rr, z = isl.z + Math.sin(a) * rr;
+        const h = terrainHeight(x, z);
+        const e = 5;
+        const slope = Math.hypot(terrainHeight(x + e, z) - h, terrainHeight(x, z + e) - h) / e;
+        const coastal = h > -2.5 && h < 3;
+        const steep = slope > 0.55 && h > 8 && h < 220;
+        if (!coastal && !steep) continue;
+        spots.push([x, h, z]);
+        placed++;
+      }
+    }
+    const rocks = new THREE.InstancedMesh(geo, mat, spots.length);
+    rocks.castShadow = rocks.receiveShadow = true;
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
+          pos = new THREE.Vector3(), scl = new THREE.Vector3(), eul = new THREE.Euler();
+    spots.forEach(([x, h, z], i) => {
+      eul.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+      q.setFromEuler(eul);
+      const s = 0.6 + Math.random() * 2.8;
+      scl.set(s * (0.7 + Math.random() * 0.7), s * (0.5 + Math.random() * 0.5), s * (0.7 + Math.random() * 0.7));
+      pos.set(x, h + s * 0.1, z);
+      m.compose(pos, q, scl);
+      rocks.setMatrixAt(i, m);
+    });
+    this.scene.add(rocks);
   }
 
   /* ---------------- bird flocks ---------------- */
@@ -544,8 +696,8 @@ class World {
   /* ---------------- ship fleet ---------------- */
   makeShip() {
     const g = new THREE.Group();
-    const hullMat = new THREE.MeshLambertMaterial({ color: 0x4a3628 });
-    const sailMat = new THREE.MeshLambertMaterial({ color: 0xd8e4d4, side: THREE.DoubleSide });
+    const hullMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a3628 });
+    const sailMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xd8e4d4, side: THREE.DoubleSide });
 
     const hull = new THREE.Mesh(new THREE.BoxGeometry(13, 2.6, 4.4), hullMat);
     hull.position.y = 0.6;

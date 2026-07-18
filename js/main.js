@@ -23,10 +23,19 @@ const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerH
 const composer = new THREE.EffectComposer(renderer);
 composer.addPass(new THREE.RenderPass(scene, camera));
 const bloomPass = new THREE.UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.45, 0.4, 0.95);
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.38, 0.4, 0.95);
 composer.addPass(bloomPass);
 
 const world = new World(scene);
+
+/* bake the sky into an environment map: PBR materials get image-based lighting */
+{
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  const envScene = new THREE.Scene();
+  envScene.add(world.skyMesh.clone());
+  scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+  pmrem.dispose();
+}
 const dragon = new ModelDragon(scene);
 const aiDragon = new ModelDragon(scene);          // another dragon circling the Dragonmont
 aiDragon.setScheme('seasmoke');
@@ -176,7 +185,7 @@ function crash(msg) {
 }
 
 /* ---------------- fire breath ---------------- */
-const FIRE_C0 = [1.0, 0.95, 0.72];   // white-hot
+const FIRE_C0 = [1.0, 0.82, 0.45];   // white-hot orange
 const FIRE_C1 = [0.55, 0.10, 0.02];  // dying ember
 const SMOKE_C0 = [0.28, 0.26, 0.25];
 const SMOKE_C1 = [0.05, 0.05, 0.05];
@@ -198,7 +207,7 @@ function spawnFireBreath(dt, mouth, dir, dragonVel) {
       2.2 + Math.random() * 1.6,           // size
       9,                                    // grow
       FIRE_C0, FIRE_C1,
-      1.0, 1.6, 11                          // alpha, drag, buoyancy
+      0.85, 1.6, 11                         // alpha, drag, buoyancy
     );
   }
 }
@@ -475,7 +484,7 @@ function updateHud() {
 
 /* ---------------- menu backdrop camera ---------------- */
 function updateMenuCamera() {
-  const t = world.t * 0.06;
+  const t = world.t * 0.06 - 2.16;   // start on the sunlit side of the Dragonmont
   const c = WORLD.volcano;
   camera.position.set(
     c.x + Math.cos(t) * 620,

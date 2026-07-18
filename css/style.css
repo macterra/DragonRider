@@ -95,7 +95,7 @@ body.playing #hud { opacity: 1; }
 #menu {
   position: fixed; inset: 0; z-index: 10;
   display: flex; align-items: center; justify-content: center;
-  background: radial-gradient(ellipse at center, rgba(8,4,4,.62) 0%, rgba(5,2,3,.92) 100%);
+  background: radial-gradient(ellipse at center, rgba(8,4,4,.45) 0%, rgba(5,2,3,.82) 100%);
   transition: opacity .6s;
 }
 #menu.hidden { opacity: 0; pointer-events: none; }
