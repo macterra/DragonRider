@@ -63,6 +63,8 @@ class World {
     this.buildVolcano();
     this.buildCastle();
     this.buildCity();
+    this.buildTrees();
+    this.buildBirds();
     this.buildShips();
   }
 
@@ -83,16 +85,44 @@ class World {
     this.sun = sun;
   }
 
-  /* ---------------- sky dome ---------------- */
+  /* ---------------- sky dome + sun glow ---------------- */
   buildSky() {
+    // soft additive glow around the sun
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 256;
+    const ctx = cv.getContext('2d');
+    let g = ctx.createRadialGradient(128, 128, 0, 128, 128, 128);
+    g.addColorStop(0, 'rgba(255,240,210,0.4)');
+    g.addColorStop(0.25, 'rgba(255,190,120,0.2)');
+    g.addColorStop(1, 'rgba(255,150,80,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+    const glowTex = new THREE.CanvasTexture(cv);
+
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+    }));
+    glow.scale.set(900, 900, 1);
+    glow.position.copy(this.SUN_DIR).multiplyScalar(4600);
+    glow.renderOrder = -2;
+    this.scene.add(glow);
+
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
+    }));
+    core.scale.set(380, 380, 1);
+    core.position.copy(this.SUN_DIR).multiplyScalar(4600);
+    core.renderOrder = -1;
+    this.scene.add(core);
+
     const geo = new THREE.SphereGeometry(5200, 24, 16);
     const mat = new THREE.ShaderMaterial({
       side: THREE.BackSide,
       depthWrite: false,
       uniforms: {
         uSunDir: { value: this.SUN_DIR },
-        uZenith: { value: new THREE.Color(0x3b5a8a) },
-        uHorizon:{ value: new THREE.Color(0xe8965a) },
+        uZenith: { value: new THREE.Color(0x2e4a78) },
+        uHorizon:{ value: new THREE.Color(0xe0823e) },
         uBelow:  { value: new THREE.Color(0x3a2f2a) },
         uSunCol: { value: new THREE.Color(0xffd9a0) },
       },
@@ -185,8 +215,8 @@ class World {
       uDeep:    { value: new THREE.Color(0x123a4a) },
       uShallow: { value: new THREE.Color(0x2a6a72) },
       uSky:     { value: new THREE.Color(0xe8a06a) },
-      uFogColor:{ value: new THREE.Color(0xd9a066) },
-      uFogDensity: { value: 0.0005 },
+      uFogColor:{ value: new THREE.Color(0xc8905e) },
+      uFogDensity: { value: 0.00045 },
     };
     const mat = new THREE.ShaderMaterial({
       transparent: true,
@@ -213,7 +243,7 @@ class World {
         }`,
       fragmentShader: `
         uniform vec3 uSunDir, uSunColor, uDeep, uShallow, uSky, uFogColor;
-        uniform float uFogDensity;
+        uniform float uFogDensity, uTime;
         varying vec3 vWorldPos;
         varying vec3 vNormal;
         void main() {
@@ -225,6 +255,11 @@ class World {
           vec3 R = reflect(-V, N);
           float spec = pow(max(dot(R, uSunDir), 0.0), 220.0);
           col += uSunColor * spec * 1.6;
+          // whitecap sparkle on wave crests
+          float cap = smoothstep(0.72, 0.97,
+            sin(vWorldPos.x * 0.9 + uTime * 1.3) * sin(vWorldPos.z * 0.8 - uTime * 1.1)
+            + vWorldPos.y * 0.22);
+          col += vec3(0.85, 0.9, 0.95) * cap * 0.18;
           float depth = length(cameraPosition - vWorldPos);
           float f = 1.0 - exp(-uFogDensity * uFogDensity * depth * depth);
           col = mix(col, uFogColor, clamp(f, 0.0, 1.0));
@@ -240,16 +275,23 @@ class World {
     const cv = document.createElement('canvas');
     cv.width = cv.height = 128;
     const ctx = cv.getContext('2d');
-    for (let i = 0; i < 16; i++) {
-      const bx = 34 + Math.random() * 60;
-      const by = 48 + Math.random() * 32;
-      const br = 14 + Math.random() * 22;
+    for (let i = 0; i < 20; i++) {
+      const bx = 30 + Math.random() * 68;
+      const by = 42 + Math.random() * 40;
+      const br = 12 + Math.random() * 24;
       const g = ctx.createRadialGradient(bx, by, 0, bx, by, br);
-      g.addColorStop(0, 'rgba(255,255,255,0.22)');
+      g.addColorStop(0, 'rgba(255,255,255,0.25)');
       g.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, 128, 128);
     }
+    // shade the undersides for depth
+    ctx.globalCompositeOperation = 'source-atop';
+    const shade = ctx.createLinearGradient(0, 40, 0, 128);
+    shade.addColorStop(0, 'rgba(255,255,255,0)');
+    shade.addColorStop(1, 'rgba(70,60,85,0.45)');
+    ctx.fillStyle = shade;
+    ctx.fillRect(0, 0, 128, 128);
     return new THREE.CanvasTexture(cv);
   }
 
@@ -416,6 +458,89 @@ class World {
     this.scene.add(g);
   }
 
+  /* ---------------- instanced trees ---------------- */
+  buildTrees() {
+    const avoid = [
+      [WORLD.castle.x, WORLD.castle.z, 95],
+      [WORLD.city.x, WORLD.city.z, 135],
+      [WORLD.volcano.x, WORLD.volcano.z, 135],
+    ];
+    const perIsland = [280, 320, 45, 40, 25, 20];
+    const spots = [];
+    WORLD.islands.forEach((isl, ii) => {
+      let placed = 0, tries = 0;
+      while (placed < perIsland[ii] && tries++ < perIsland[ii] * 14) {
+        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * isl.r * 0.92;
+        const x = isl.x + Math.cos(a) * r, z = isl.z + Math.sin(a) * r;
+        const h = terrainHeight(x, z);
+        if (h < 3 || h > 48) continue;
+        const e = 5;
+        const slope = Math.hypot(terrainHeight(x + e, z) - h, terrainHeight(x, z + e) - h) / e;
+        if (slope > 0.6) continue;
+        if (avoid.some(([ax, az, ar]) => Math.hypot(x - ax, z - az) < ar)) continue;
+        spots.push([x, h, z]);
+        placed++;
+      }
+    });
+
+    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.55, 3.2, 5);
+    const coneGeo = new THREE.ConeGeometry(2.2, 6.5, 6);
+    const trunks = new THREE.InstancedMesh(trunkGeo,
+      new THREE.MeshLambertMaterial({ color: 0x4a3626 }), spots.length);
+    const leaves = new THREE.InstancedMesh(coneGeo,
+      new THREE.MeshLambertMaterial({ color: 0xffffff }), spots.length);
+    trunks.castShadow = leaves.castShadow = true;
+
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
+          pos = new THREE.Vector3(), scl = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    const col = new THREE.Color(), g1 = new THREE.Color(0x2f5230), g2 = new THREE.Color(0x5a7a38);
+    spots.forEach(([x, h, z], i) => {
+      const s = 0.9 + Math.random() * 0.9;
+      q.setFromAxisAngle(up, Math.random() * Math.PI * 2);
+      scl.set(s, s, s);
+      pos.set(x, h + 1.6 * s, z);
+      m.compose(pos, q, scl);
+      trunks.setMatrixAt(i, m);
+      pos.y = h + 5.8 * s;
+      m.compose(pos, q, scl);
+      leaves.setMatrixAt(i, m);
+      leaves.setColorAt(i, col.lerpColors(g1, g2, Math.random()));
+    });
+    if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
+    this.scene.add(trunks, leaves);
+  }
+
+  /* ---------------- bird flocks ---------------- */
+  buildBirds() {
+    this.birds = [];
+    const flocks = [
+      { c: [70, 330, -50], r: 280, n: 8 },
+      { c: [420, 200, -420], r: 220, n: 6 },
+      { c: [754, 170, 182], r: 160, n: 6 },
+    ];
+    const wingGeo = new THREE.PlaneGeometry(1.1, 0.3);
+    wingGeo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({ color: 0x1a1512, side: THREE.DoubleSide });
+    for (const f of flocks) {
+      for (let i = 0; i < f.n; i++) {
+        const b = new THREE.Group();
+        const wl = new THREE.Mesh(wingGeo, mat); wl.position.x = -0.5;
+        const wr = new THREE.Mesh(wingGeo, mat); wr.position.x = 0.5;
+        b.add(wl, wr);
+        this.scene.add(b);
+        this.birds.push({
+          g: b, wl, wr,
+          c: new THREE.Vector3(f.c[0], f.c[1], f.c[2]),
+          r: f.r * (0.7 + Math.random() * 0.5),
+          a: Math.random() * Math.PI * 2,
+          sp: 7 + Math.random() * 4,
+          ph: Math.random() * 7,
+          dy: (Math.random() - 0.5) * 40,
+        });
+      }
+    }
+  }
+
   /* ---------------- ship fleet ---------------- */
   makeShip() {
     const g = new THREE.Group();
@@ -506,6 +631,20 @@ class World {
     // lava pulse
     this.lavaLight.intensity = 1.3 + Math.sin(t * 3.7) * 0.3 + Math.sin(t * 9.1) * 0.15;
     this.lavaMat.color.setHSL(0.045 + Math.sin(t * 2.2) * 0.008, 1.0, 0.52 + Math.sin(t * 5.3) * 0.04);
+
+    // birds wheel around their flocks
+    for (const b of this.birds) {
+      b.a += (b.sp * dt) / b.r;
+      b.g.position.set(
+        b.c.x + Math.cos(b.a) * b.r,
+        b.c.y + b.dy + Math.sin(t * 0.8 + b.ph) * 6,
+        b.c.z + Math.sin(b.a) * b.r
+      );
+      b.g.rotation.y = -b.a;
+      const flap = Math.sin(t * 9 + b.ph) * 0.75;
+      b.wl.rotation.z = flap;
+      b.wr.rotation.z = -flap;
+    }
 
     // clouds drift with the wind
     for (const c of this.clouds) {

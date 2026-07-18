@@ -15,9 +15,16 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.06;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xd9a066, 0.0005);
+scene.fog = new THREE.FogExp2(0xc8905e, 0.00045);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 12000);
+
+/* post-processing: bloom makes the fire, lava, sun and sea-glints glow */
+const composer = new THREE.EffectComposer(renderer);
+composer.addPass(new THREE.RenderPass(scene, camera));
+const bloomPass = new THREE.UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.45, 0.4, 0.95);
+composer.addPass(bloomPass);
 
 const world = new World(scene);
 const dragon = new ModelDragon(scene);
@@ -132,6 +139,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 /* ---------------- menu / start ---------------- */
@@ -541,7 +549,7 @@ function loop() {
     }
   }
 
-  renderer.render(scene, camera);
+  composer.render();
 }
 
 loop();
