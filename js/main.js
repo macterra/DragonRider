@@ -571,6 +571,13 @@ if (autoDragon) {
   startGame();
   if (urlParams.get('fire')) input.keys.Space = true;   // test: breathe fire continuously
 
+  // test: teleport viewpoint, e.g. ?pos=500,120,150&yaw=82
+  if (urlParams.get('pos')) {
+    const [px, py, pz] = urlParams.get('pos').split(',').map(Number);
+    state.pos.set(px, py, pz);
+    if (urlParams.get('yaw')) state.yaw = Number(urlParams.get('yaw')) * Math.PI / 180;
+  }
+
   // test: strafing run over the fleet — low pass across the bay, fire held
   const burnTest = urlParams.get('burn');
   if (burnTest) {

@@ -107,6 +107,123 @@ function makeNormalTexture() {
   return tex;
 }
 
+function canvasTex(size, draw) {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = size;
+  draw(cv.getContext('2d'), size);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.encoding = THREE.sRGBEncoding;
+  return tex;
+}
+
+/* wood planks for ship hulls */
+function makeWoodTexture() {
+  return canvasTex(128, (ctx, S) => {
+    ctx.fillStyle = '#8a6a48';
+    ctx.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 16) {
+      ctx.fillStyle = 'rgba(40,25,15,0.55)';
+      ctx.fillRect(0, y, S, 2);
+      for (let x = ((y / 16) % 2) * 32; x < S; x += 64) ctx.fillRect(x, y, 2, 16);   // joints
+    }
+    for (let i = 0; i < 300; i++) {
+      const g = 90 + (Math.random() * 80) | 0;
+      ctx.fillStyle = `rgba(${g},${g * 0.7 | 0},${g * 0.45 | 0},0.25)`;
+      ctx.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 14, 1);
+    }
+  });
+}
+
+/* plastered wall with window grid and stone base */
+function makeWallTexture(base) {
+  return canvasTex(128, (ctx, S) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, S, S);
+    for (let i = 0; i < 500; i++) {
+      const a = 0.05 + Math.random() * 0.08;
+      ctx.fillStyle = Math.random() < 0.5 ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+      ctx.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+    }
+    // stone base band
+    ctx.fillStyle = 'rgba(60,50,45,0.55)';
+    ctx.fillRect(0, S - 18, S, 18);
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    for (let x = 0; x < S; x += 21) ctx.fillRect(x, S - 18, 1, 18);
+    // windows
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        const x = 18 + c * 38, y = 16 + r * 32;
+        ctx.fillStyle = 'rgba(220,210,190,0.7)';
+        ctx.fillRect(x - 2, y - 2, 16, 20);
+        ctx.fillStyle = '#241f18';
+        ctx.fillRect(x, y, 12, 16);
+      }
+    }
+  });
+}
+
+/* curved roof tiles */
+function makeRoofTexture(base) {
+  return canvasTex(128, (ctx, S) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 16) {
+      for (let x = -8; x < S; x += 16) {
+        const ox = ((y / 16) % 2) * 8;
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        ctx.beginPath(); ctx.arc(x + ox, y + 14, 8, Math.PI, 0); ctx.fill();
+        ctx.fillStyle = 'rgba(0,0,0,0.35)';
+        ctx.beginPath(); ctx.arc(x + ox, y + 15, 8, 0, Math.PI); ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath(); ctx.arc(x + ox, y + 14, 8, Math.PI, 0); ctx.stroke();
+      }
+    }
+  });
+}
+
+/* stone block courses for the castle */
+function makeStoneTexture() {
+  return canvasTex(128, (ctx, S) => {
+    ctx.fillStyle = '#9a9aa2';
+    ctx.fillRect(0, 0, S, S);
+    for (let y = 0; y < S; y += 16) {
+      ctx.fillStyle = 'rgba(30,30,40,0.45)';
+      ctx.fillRect(0, y, S, 2);
+      for (let x = ((y / 16) % 2) * 16; x < S; x += 32) ctx.fillRect(x, y, 2, 16);
+    }
+    for (let i = 0; i < 400; i++) {
+      const a = 0.05 + Math.random() * 0.1;
+      ctx.fillStyle = Math.random() < 0.5 ? `rgba(0,0,0,${a})` : `rgba(255,255,255,${a})`;
+      ctx.fillRect(Math.random() * S, Math.random() * S, 2, 2);
+    }
+  });
+}
+
+/* sail with house sigil */
+function makeSailTexture() {
+  return canvasTex(256, (ctx, S) => {
+    ctx.fillStyle = '#e8e0ce';
+    ctx.fillRect(0, 0, S, S);
+    ctx.strokeStyle = 'rgba(120,100,80,0.35)';
+    for (let x = 0; x < S; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, S); ctx.stroke(); }
+    // Velaryon sea-green band
+    ctx.fillStyle = 'rgba(60,110,90,0.85)';
+    ctx.fillRect(0, S - 34, S, 34);
+    // seahorse-ish sigil
+    ctx.strokeStyle = '#1e4a3c';
+    ctx.lineWidth = 9;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(96, 150);
+    ctx.bezierCurveTo(70, 110, 110, 60, 145, 78);
+    ctx.bezierCurveTo(170, 92, 165, 120, 142, 122);
+    ctx.bezierCurveTo(160, 140, 150, 172, 118, 176);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(142, 86, 6, 0, 7); ctx.fillStyle = '#1e4a3c'; ctx.fill();
+  });
+}
+
 /* smoothstep that also works with edge0 > edge1 */
 function sstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -443,8 +560,9 @@ class World {
   /* ---------------- Dragonstone castle ---------------- */
   buildCastle() {
     const g = new THREE.Group();
-    const stone  = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a4a52 });
-    const dark   = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x33333a });
+    const stoneTex = makeStoneTexture();
+    const stone  = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x6a6a74, map: stoneTex });
+    const dark   = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x48484e, map: stoneTex });
     const roof   = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x23232a });
 
     const add = (mesh, x, y, z) => {
@@ -498,13 +616,13 @@ class World {
   buildCity() {
     const g = new THREE.Group();
     const wallMats = [
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xcbb9a0 }),
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xb7a48c }),
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xd8c4a8 }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeWallTexture('#cbb9a0') }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeWallTexture('#b7a48c') }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeWallTexture('#d8c4a8') }),
     ];
     const roofMats = [
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x8a3b2a }),
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x6e5a3a }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeRoofTexture('#8a3b2a') }),
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeRoofTexture('#6e5a3a') }),
     ];
     const boxGeo = new THREE.BoxGeometry(1, 1, 1);
     const coneGeo = new THREE.ConeGeometry(1, 1, 4);
@@ -538,8 +656,9 @@ class World {
 
     // the Red Keep on its hill
     const keep = new THREE.Group();
-    const red = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x9c4a34 });
-    const redDark = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x7a3826 });
+    const redTex = makeWallTexture('#9c4a34');
+    const red = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: redTex });
+    const redDark = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: redTex, color: 0xa88878 });
     const kx = c.x + 84, kz = c.z + 26;
     const kh = terrainHeight(kx, kz);
     const kb = new THREE.Mesh(new THREE.BoxGeometry(40, 30, 34), red);
@@ -587,31 +706,69 @@ class World {
       }
     });
 
-    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.55, 3.2, 5);
-    const coneGeo = new THREE.ConeGeometry(2.2, 6.5, 6);
-    const trunks = new THREE.InstancedMesh(trunkGeo,
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a3626 }), spots.length);
-    const leaves = new THREE.InstancedMesh(coneGeo,
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xffffff }), spots.length);
-    trunks.castShadow = leaves.castShadow = true;
+    // split into conifers (multi-tier) and broadleaf (blob canopy)
+    const conf = [], broad = [];
+    for (const s of spots) (Math.random() < 0.72 ? conf : broad).push(s);
 
+    const trunkGeo = new THREE.CylinderGeometry(0.3, 0.55, 3.2, 5);
+    const trunkMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a3626 });
+    const leafMat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0, color: 0xffffff });
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(),
           pos = new THREE.Vector3(), scl = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     const col = new THREE.Color(), g1 = new THREE.Color(0x2f5230), g2 = new THREE.Color(0x5a7a38);
-    spots.forEach(([x, h, z], i) => {
-      const s = 0.9 + Math.random() * 0.9;
+
+    // conifers: trunk + 3 canopy tiers
+    const tierGeos = [
+      new THREE.ConeGeometry(2.6, 3.4, 7),
+      new THREE.ConeGeometry(1.9, 2.9, 7),
+      new THREE.ConeGeometry(1.2, 2.5, 6),
+    ];
+    const trunksC = new THREE.InstancedMesh(trunkGeo, trunkMat, conf.length);
+    const tiers = tierGeos.map(tg => new THREE.InstancedMesh(tg, leafMat, conf.length));
+    trunksC.castShadow = true;
+    tiers.forEach(t => { t.castShadow = true; });
+    conf.forEach(([x, h, z], i) => {
+      const s = 0.8 + Math.random() * 0.8;
       q.setFromAxisAngle(up, Math.random() * Math.PI * 2);
       scl.set(s, s, s);
       pos.set(x, h + 1.6 * s, z);
       m.compose(pos, q, scl);
-      trunks.setMatrixAt(i, m);
-      pos.y = h + 5.8 * s;
-      m.compose(pos, q, scl);
-      leaves.setMatrixAt(i, m);
-      leaves.setColorAt(i, col.lerpColors(g1, g2, Math.random()));
+      trunksC.setMatrixAt(i, m);
+      const treeCol = col.lerpColors(g1, g2, Math.random());
+      let y = h + 3.6 * s;
+      for (let t = 0; t < 3; t++) {
+        pos.y = y;
+        m.compose(pos, q, scl);
+        tiers[t].setMatrixAt(i, m);
+        tiers[t].setColorAt(i, col.copy(treeCol).multiplyScalar(0.88 + t * 0.1));
+        y += (t === 0 ? 2.3 : 2.0) * s;
+      }
     });
-    if (leaves.instanceColor) leaves.instanceColor.needsUpdate = true;
-    this.scene.add(trunks, leaves);
+
+    // broadleaf: trunk + squashed blob canopy
+    const blobGeo = new THREE.IcosahedronGeometry(2.4, 1);
+    const trunksB = new THREE.InstancedMesh(trunkGeo, trunkMat, broad.length);
+    const blobs = new THREE.InstancedMesh(blobGeo, leafMat, broad.length);
+    trunksB.castShadow = blobs.castShadow = true;
+    const b1 = new THREE.Color(0x4a7030), b2 = new THREE.Color(0x7a9440);
+    broad.forEach(([x, h, z], i) => {
+      const s = 0.8 + Math.random() * 0.7;
+      q.setFromAxisAngle(up, Math.random() * Math.PI * 2);
+      scl.set(s, s, s);
+      pos.set(x, h + 1.6 * s, z);
+      m.compose(pos, q, scl);
+      trunksB.setMatrixAt(i, m);
+      scl.set(s * 1.15, s * 0.78, s * 1.15);
+      pos.y = h + 4.6 * s;
+      m.compose(pos, q, scl);
+      blobs.setMatrixAt(i, m);
+      blobs.setColorAt(i, col.lerpColors(b1, b2, Math.random()));
+    });
+
+    for (const im of [trunksC, ...tiers, trunksB, blobs]) {
+      if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      this.scene.add(im);
+    }
   }
 
   /* ---------------- noise-displaced rocks ---------------- */
@@ -695,30 +852,60 @@ class World {
 
   /* ---------------- ship fleet ---------------- */
   makeShip() {
+    // a little wooden cog: flared hull, stern/bow castles, curved sail, rigging
     const g = new THREE.Group();
-    const hullMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0x4a3628 });
-    const sailMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, color: 0xd8e4d4, side: THREE.DoubleSide });
+    const hullMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, color: 0x9a7850, map: makeWoodTexture() });
+    const trimMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, color: 0x3a2a1c });
 
-    const hull = new THREE.Mesh(new THREE.BoxGeometry(13, 2.6, 4.4), hullMat);
-    hull.position.y = 0.6;
-    hull.castShadow = true;
-    g.add(hull);
+    const add = (mesh, x, y, z) => {
+      mesh.position.set(x, y, z);
+      mesh.castShadow = true;
+      g.add(mesh);
+      return mesh;
+    };
 
-    const bow = new THREE.Mesh(new THREE.ConeGeometry(2.2, 5, 4), hullMat);
-    bow.rotation.z = -Math.PI / 2;
-    bow.scale.set(1, 1, 0.7);
-    bow.position.set(8.6, 0.6, 0);
-    g.add(bow);
+    add(new THREE.Mesh(new THREE.BoxGeometry(13, 2.2, 4.2), hullMat), 0, 0.4, 0);      // lower hull
+    add(new THREE.Mesh(new THREE.BoxGeometry(12, 1.6, 5.0), hullMat), -0.2, 2.2, 0);   // flared upper hull
+    add(new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.6, 4.4), hullMat), 6.0, 2.4, 0);   // bow castle
+    add(new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.4, 4.8), hullMat), -5.2, 3.0, 0);  // stern castle
+    add(new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.4, 5.2), trimMat), -5.2, 4.9, 0);  // castle roof
 
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 11, 5), hullMat);
-    mast.position.y = 6;
-    mast.castShadow = true;
-    g.add(mast);
+    const sprit = add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 5, 5), trimMat), 8.4, 3.4, 0);
+    sprit.rotation.z = -1.2;                                                            // bowsprit
 
-    const sail = new THREE.Mesh(new THREE.PlaneGeometry(6.5, 7), sailMat);
-    sail.position.set(0, 6.4, 0.3);
-    sail.castShadow = true;
-    g.add(sail);
+    add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 13, 6), trimMat), 0.5, 7.5, 0);  // mast
+    const yard = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 7.6, 5), trimMat), 0.5, 12.2, 0);
+    yard.rotation.x = Math.PI / 2;                                                      // yard arm
+
+    // wind-filled sail (belly curved)
+    const sailGeo = new THREE.PlaneGeometry(6.8, 6.4, 6, 5);
+    const sp = sailGeo.attributes.position;
+    for (let i = 0; i < sp.count; i++) {
+      const x = sp.getX(i);
+      sp.setZ(i, (1 - Math.pow(x / 3.4, 2)) * 0.9);
+    }
+    sailGeo.computeVertexNormals();
+    const sail = add(new THREE.Mesh(sailGeo,
+      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeSailTexture(), side: THREE.DoubleSide })),
+      0.5, 8.8, 0.2);
+    sail.rotation.y = Math.PI / 2;
+
+    // rigging
+    const rig = (ax, ay, bx, by) => {
+      const a = new THREE.Vector3(ax, ay, 0), b = new THREE.Vector3(bx, by, 0);
+      const dir = new THREE.Vector3().subVectors(b, a);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, dir.length(), 3), trimMat);
+      m.position.copy(a).addScaledVector(dir, 0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+      g.add(m);
+    };
+    rig(0.5, 13.6, 7.6, 3.2);
+    rig(0.5, 13.6, -6.6, 5.0);
+
+    // pennant
+    const flag = add(new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.5),
+      new THREE.MeshStandardMaterial({ color: 0x1e5a3c, side: THREE.DoubleSide })), 0.5, 14.0, 0.9);
+    flag.rotation.y = 0.3;
 
     return g;
   }
