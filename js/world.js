@@ -277,10 +277,10 @@ class World {
 
   /* ---------------- lights ---------------- */
   buildLights() {
-    const hemi = new THREE.HemisphereLight(0xffdcb0, 0x1c2026, 0.45);
+    const hemi = new THREE.HemisphereLight(0xffdcb0, 0x1c2026, 0.25);
     this.scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffd2a0, 1.25);
+    const sun = new THREE.DirectionalLight(0xffd2a0, 1.0);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     const c = sun.shadow.camera;
@@ -312,7 +312,6 @@ class World {
     glow.scale.set(900, 900, 1);
     glow.position.copy(this.SUN_DIR).multiplyScalar(4600);
     glow.renderOrder = -2;
-    this.scene.add(glow);
 
     const core = new THREE.Sprite(new THREE.SpriteMaterial({
       map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
@@ -320,7 +319,10 @@ class World {
     core.scale.set(380, 380, 1);
     core.position.copy(this.SUN_DIR).multiplyScalar(4600);
     core.renderOrder = -1;
-    this.scene.add(core);
+
+    this.sunGlow = new THREE.Group();
+    this.sunGlow.add(glow, core);
+    this.scene.add(this.sunGlow);
 
     const geo = new THREE.SphereGeometry(5200, 24, 16);
     const mat = new THREE.ShaderMaterial({
@@ -367,39 +369,21 @@ class World {
     const colors = new Float32Array(pos.count * 3);
     const col = new THREE.Color();
 
-    const sand  = new THREE.Color(0xb39b6b);
-    const wet   = new THREE.Color(0x6e6046);
-    const grassA= new THREE.Color(0x4f7038);
-    const grassB= new THREE.Color(0x7a8a4a);
-    const rock  = new THREE.Color(0x6e665e);
-    const ash   = new THREE.Color(0x3a3532);
-    const basalt= new THREE.Color(0x26221f);
-
+    // vertex colors now only carry large-scale luminance/hue variation;
+    // the photographic textures carry the actual surface color
     const v = WORLD.volcano;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), z = pos.getZ(i);
       const h = terrainHeight(x, z);
       pos.setY(i, h);
 
-      // slope estimate
-      const e = 6;
-      const sx = (terrainHeight(x + e, z) - h) / e;
-      const sz = (terrainHeight(x, z + e) - h) / e;
-      const slope = Math.hypot(sx, sz);
-
       const n = Noise.fbm2(x * 0.02 + 3.1, z * 0.02 + 8.7, 3);
-      if (h < 1.5) {
-        col.lerpColors(wet, sand, sstep(-6, 1.5, h));
-      } else if (slope > 0.55) {
-        col.copy(rock).offsetHSL(0, 0, (n - 0.5) * 0.08);
-      } else if (h > 130) {
-        col.copy(ash);
-      } else {
-        col.lerpColors(grassA, grassB, n);
-      }
+      const n2 = Noise.fbm2(x * 0.006 + 9.4, z * 0.006 + 1.2, 3);
+      let lum = 0.72 + n * 0.28;
+      col.setRGB(lum, lum * (0.95 + n2 * 0.08), lum * (0.88 + n2 * 0.1));
       // dark basalt near the volcano crater
       const dv = Math.hypot(x - v.x, z - v.z);
-      if (dv < v.craterR + 55 && h > 90) col.lerp(basalt, sstep(v.craterR + 55, v.craterR, dv));
+      if (dv < v.craterR + 55 && h > 90) col.multiplyScalar(1 - sstep(v.craterR + 55, v.craterR, dv) * 0.65);
 
       colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
     }
@@ -407,14 +391,52 @@ class World {
     geo.computeVertexNormals();
 
     const detail = makeDetailTexture();
+    const texLoader = new THREE.TextureLoader();
+    const tex = {
+      grass: texLoader.load(ASSET_GRASS_JPG),
+      rock: texLoader.load(ASSET_ROCK_JPG),
+      sand: texLoader.load(ASSET_SAND_JPG),
+    };
+    for (const t of Object.values(tex)) {
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.encoding = THREE.sRGBEncoding;
+    }
+    this.terrainTex = Object.values(tex);
+
     const mat = new THREE.MeshStandardMaterial({
       vertexColors: true,
-      map: detail,
       bumpMap: detail,
-      bumpScale: 0.6,
+      bumpScale: 0.5,
       roughness: 0.95,
       metalness: 0.0,
     });
+    mat.map = tex.grass;   // enables the map chunk; the blend below overrides it
+    mat.onBeforeCompile = shader => {
+      shader.uniforms.tGrass = { value: tex.grass };
+      shader.uniforms.tRock = { value: tex.rock };
+      shader.uniforms.tSand = { value: tex.sand };
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNorm;')
+        .replace('#include <project_vertex>',
+          '#include <project_vertex>\n' +
+          'vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\n' +
+          'vWNorm = normalize(mat3(modelMatrix) * objectNormal);');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\n' +
+          'uniform sampler2D tGrass;\nuniform sampler2D tRock;\nuniform sampler2D tSand;\n' +
+          'varying vec3 vWPos;\nvarying vec3 vWNorm;')
+        .replace('#include <map_fragment>', `
+          vec3 g = texture2D(tGrass, vWPos.xz * 0.30).rgb * vec3(0.85, 0.9, 0.82);
+          vec3 r = texture2D(tRock, vWPos.xz * 0.08).rgb;
+          vec3 s = texture2D(tSand, vWPos.xz * 0.22).rgb;
+          float slope = 1.0 - clamp(vWNorm.y, 0.0, 1.0);
+          float rockW = smoothstep(0.45, 0.80, slope);
+          float sandW = 1.0 - smoothstep(0.8, 2.6, vWPos.y);
+          vec3 terr = mix(g, r, rockW);
+          terr = mix(terr, s, sandW);
+          diffuseColor.rgb *= terr * 1.1;
+        `);
+    };
     const mesh = new THREE.Mesh(geo, mat);
     mesh.receiveShadow = true;
     this.scene.add(mesh);
@@ -783,7 +805,10 @@ class World {
       p.setXYZ(i, v.x, v.y * 0.7, v.z);
     }
     geo.computeVertexNormals();
-    const mat = new THREE.MeshStandardMaterial({ color: 0x6b625a, roughness: 1, metalness: 0 });
+    const rockTex = new THREE.TextureLoader().load(ASSET_ROCK_JPG);
+    rockTex.wrapS = rockTex.wrapT = THREE.RepeatWrapping;
+    rockTex.encoding = THREE.sRGBEncoding;
+    const mat = new THREE.MeshStandardMaterial({ color: 0xb0a89e, roughness: 1, metalness: 0, map: rockTex });
 
     const spots = [];
     for (const isl of WORLD.islands) {

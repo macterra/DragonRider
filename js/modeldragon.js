@@ -58,7 +58,10 @@ class ModelDragon {
         o.castShadow = true;
         o.frustumCulled = false;           // skinned bounds go stale when animating
         const list = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of list) (this.mats[m.name] = this.mats[m.name] || []).push(m);
+        for (const m of list) {
+          m.envMapIntensity = 0.45;        // keep the dragon's colors saturated under IBL
+          (this.mats[m.name] = this.mats[m.name] || []).push(m);
+        }
       }
     });
 

@@ -12,10 +12,10 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputEncoding = THREE.sRGBEncoding;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.06;
+renderer.toneMappingExposure = 0.75;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0xc8905e, 0.00045);
+scene.fog = new THREE.FogExp2(0xb08458, 0.00045);
 
 const camera = new THREE.PerspectiveCamera(62, window.innerWidth / window.innerHeight, 0.5, 12000);
 
@@ -28,14 +28,21 @@ composer.addPass(bloomPass);
 
 const world = new World(scene);
 
-/* bake the sky into an environment map: PBR materials get image-based lighting */
-{
+/* HDRI sky: real photo environment + image-based lighting (falls back to
+   procedural sky if the HDR can't load) */
+new THREE.RGBELoader().load(ASSET_SKY_HDR, hdrTex => {
+  hdrTex.mapping = THREE.EquirectangularReflectionMapping;
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new THREE.Scene();
-  envScene.add(world.skyMesh.clone());
-  scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+  scene.environment = pmrem.fromEquirectangular(hdrTex).texture;
+  scene.background = hdrTex;
   pmrem.dispose();
-}
+  world.skyMesh.visible = false;
+  if (world.sunGlow) world.sunGlow.visible = false;
+});
+
+/* crisp texture sampling at grazing angles */
+const maxAniso = renderer.capabilities.getMaxAnisotropy();
+for (const t of world.terrainTex || []) t.anisotropy = maxAniso;
 const dragon = new ModelDragon(scene);
 const aiDragon = new ModelDragon(scene);          // another dragon circling the Dragonmont
 aiDragon.setScheme('seasmoke');
