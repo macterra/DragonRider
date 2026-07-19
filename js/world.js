@@ -1,5 +1,5 @@
 'use strict';
-/* global THREE, Noise */
+/* global THREE, Noise, SHIP_GLB_B64 */
 
 /* ---------------- world layout constants ---------------- */
 const WORLD = {
@@ -117,24 +117,6 @@ function canvasTex(size, draw) {
   return tex;
 }
 
-/* wood planks for ship hulls */
-function makeWoodTexture() {
-  return canvasTex(128, (ctx, S) => {
-    ctx.fillStyle = '#8a6a48';
-    ctx.fillRect(0, 0, S, S);
-    for (let y = 0; y < S; y += 16) {
-      ctx.fillStyle = 'rgba(40,25,15,0.55)';
-      ctx.fillRect(0, y, S, 2);
-      for (let x = ((y / 16) % 2) * 32; x < S; x += 64) ctx.fillRect(x, y, 2, 16);   // joints
-    }
-    for (let i = 0; i < 300; i++) {
-      const g = 90 + (Math.random() * 80) | 0;
-      ctx.fillStyle = `rgba(${g},${g * 0.7 | 0},${g * 0.45 | 0},0.25)`;
-      ctx.fillRect(Math.random() * S, Math.random() * S, 1 + Math.random() * 14, 1);
-    }
-  });
-}
-
 /* plastered wall with window grid and stone base */
 function makeWallTexture(base) {
   return canvasTex(128, (ctx, S) => {
@@ -200,34 +182,53 @@ function makeStoneTexture() {
   });
 }
 
-/* sail with house sigil */
-function makeSailTexture() {
-  return canvasTex(256, (ctx, S) => {
-    ctx.fillStyle = '#e8e0ce';
-    ctx.fillRect(0, 0, S, S);
-    ctx.strokeStyle = 'rgba(120,100,80,0.35)';
-    for (let x = 0; x < S; x += 24) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, S); ctx.stroke(); }
-    // Velaryon sea-green band
-    ctx.fillStyle = 'rgba(60,110,90,0.85)';
-    ctx.fillRect(0, S - 34, S, 34);
-    // seahorse-ish sigil
-    ctx.strokeStyle = '#1e4a3c';
-    ctx.lineWidth = 9;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(96, 150);
-    ctx.bezierCurveTo(70, 110, 110, 60, 145, 78);
-    ctx.bezierCurveTo(170, 92, 165, 120, 142, 122);
-    ctx.bezierCurveTo(160, 140, 150, 172, 118, 176);
-    ctx.stroke();
-    ctx.beginPath(); ctx.arc(142, 86, 6, 0, 7); ctx.fillStyle = '#1e4a3c'; ctx.fill();
-  });
-}
-
 /* smoothstep that also works with edge0 > edge1 */
 function sstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+}
+
+/* ---------------- caravel ship model (embedded GLB) ---------------- */
+const SHIP_LENGTH = 20;      // metres, bowsprit to stern
+const SHIP_WATERLINE = 14;   // raw GLB y that should sit at the water plane
+
+let _shipModel = null;
+const _shipCbs = [];
+function loadSharedShip(cb) {
+  if (_shipModel) return cb(_shipModel);
+  _shipCbs.push(cb);
+  if (_shipCbs.length > 1) return;
+  new THREE.GLTFLoader().load('data:model/gltf-binary;base64,' + SHIP_GLB_B64, gltf => {
+    _shipModel = prepareShipModel(gltf.scene);
+    for (const w of _shipCbs.splice(0)) w(_shipModel);
+  }, undefined, err => console.error('caravel.glb failed to load', err));
+}
+
+/* normalize the raw GLB: bow (+Z in the file) -> +X, centre horizontally,
+   waterline at y=0, scale to SHIP_LENGTH metres */
+function prepareShipModel(src) {
+  const wrap = new THREE.Group();
+  const inner = new THREE.Group();
+  src.updateMatrixWorld(true);
+  const rawBox = new THREE.Box3().setFromObject(src);
+  const s = SHIP_LENGTH / rawBox.getSize(new THREE.Vector3()).z;
+  inner.scale.setScalar(s);
+  inner.rotation.y = Math.PI / 2;
+  inner.add(src);
+  wrap.add(inner);
+  wrap.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(wrap);
+  const c = box.getCenter(new THREE.Vector3());
+  inner.position.set(-c.x, -SHIP_WATERLINE * s, -c.z);
+
+  src.traverse(o => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      const list = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of list) m.envMapIntensity = 0.6;
+    }
+  });
+  return wrap;
 }
 
 /* single source of truth for terrain elevation (mesh + collisions) */
@@ -876,65 +877,8 @@ class World {
   }
 
   /* ---------------- ship fleet ---------------- */
-  makeShip() {
-    // a little wooden cog: flared hull, stern/bow castles, curved sail, rigging
-    const g = new THREE.Group();
-    const hullMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0, color: 0x9a7850, map: makeWoodTexture() });
-    const trimMat = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, color: 0x3a2a1c });
-
-    const add = (mesh, x, y, z) => {
-      mesh.position.set(x, y, z);
-      mesh.castShadow = true;
-      g.add(mesh);
-      return mesh;
-    };
-
-    add(new THREE.Mesh(new THREE.BoxGeometry(13, 2.2, 4.2), hullMat), 0, 0.4, 0);      // lower hull
-    add(new THREE.Mesh(new THREE.BoxGeometry(12, 1.6, 5.0), hullMat), -0.2, 2.2, 0);   // flared upper hull
-    add(new THREE.Mesh(new THREE.BoxGeometry(3.5, 2.6, 4.4), hullMat), 6.0, 2.4, 0);   // bow castle
-    add(new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.4, 4.8), hullMat), -5.2, 3.0, 0);  // stern castle
-    add(new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.4, 5.2), trimMat), -5.2, 4.9, 0);  // castle roof
-
-    const sprit = add(new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.18, 5, 5), trimMat), 8.4, 3.4, 0);
-    sprit.rotation.z = -1.2;                                                            // bowsprit
-
-    add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 13, 6), trimMat), 0.5, 7.5, 0);  // mast
-    const yard = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 7.6, 5), trimMat), 0.5, 12.2, 0);
-    yard.rotation.x = Math.PI / 2;                                                      // yard arm
-
-    // wind-filled sail (belly curved)
-    const sailGeo = new THREE.PlaneGeometry(6.8, 6.4, 6, 5);
-    const sp = sailGeo.attributes.position;
-    for (let i = 0; i < sp.count; i++) {
-      const x = sp.getX(i);
-      sp.setZ(i, (1 - Math.pow(x / 3.4, 2)) * 0.9);
-    }
-    sailGeo.computeVertexNormals();
-    const sail = add(new THREE.Mesh(sailGeo,
-      new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, map: makeSailTexture(), side: THREE.DoubleSide })),
-      0.5, 8.8, 0.2);
-    sail.rotation.y = Math.PI / 2;
-
-    // rigging
-    const rig = (ax, ay, bx, by) => {
-      const a = new THREE.Vector3(ax, ay, 0), b = new THREE.Vector3(bx, by, 0);
-      const dir = new THREE.Vector3().subVectors(b, a);
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, dir.length(), 3), trimMat);
-      m.position.copy(a).addScaledVector(dir, 0.5);
-      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
-      g.add(m);
-    };
-    rig(0.5, 13.6, 7.6, 3.2);
-    rig(0.5, 13.6, -6.6, 5.0);
-
-    // pennant
-    const flag = add(new THREE.Mesh(new THREE.PlaneGeometry(1.7, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0x1e5a3c, side: THREE.DoubleSide })), 0.5, 14.0, 0.9);
-    flag.rotation.y = 0.3;
-
-    return g;
-  }
-
+  /* Textured caravel GLB, embedded as base64 (file:// can't fetch).
+     Loads once; each ship gets a clone (geometry/materials shared). */
   placeShip(ship) {
     const b = WORLD.bay;
     for (let tries = 0; tries < 30; tries++) {
@@ -956,7 +900,8 @@ class World {
   buildShips() {
     this.ships = [];
     for (let i = 0; i < 12; i++) {
-      const group = this.makeShip();
+      const group = new THREE.Group();
+      loadSharedShip(model => group.add(model.clone(true)));
       const ship = {
         group,
         heading: Math.random() * Math.PI * 2,
