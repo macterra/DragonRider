@@ -1,23 +1,25 @@
 'use strict';
-/* global THREE, DRAGON_GLB_DEMON, DRAGON_GLB_RED, DRAGON_GLB_QUAT */
+/* global THREE, DRAGON_GLB_DEMON, DRAGON_GLB_RED, DRAGON_GLB_GOLD */
 
 /*
- * ModelDragon — rigged, animated, textured GLB dragons. Three distinct models:
- *   caraxes  — red/brown realistic dragon (full skeleton, fireBreath bone)
- *   syrax    — stylized Quaternius dragon (full skeleton)
- *   vhagar   — dark realistic demon dragon (full skeleton, fireBreath bone)
+ * ModelDragon — rigged, animated, textured GLB dragons. Two realistic rigs
+ * (full skeleton, fireBreath bone), three looks:
+ *   caraxes  — red rig, pale red tint
+ *   syrax    — red rig with gold-shifted texture (The Golden Queen)
+ *   vhagar   — dark demon rig
+ * (Seasmoke AI dragon: demon rig, grey tint override.)
  * Embedded as base64 so file:// works (fetch/XHR is blocked there).
  */
 
 const DRAGON_DEFS = {
   caraxes: { glbKey: 'red',   tint: 0xff9090, saddleY: 1.1 },
-  syrax:   { glbKey: 'quat',  tint: 0xd99a30, saddleY: 2.55 },   // chubby torso: bone sits ~2.5m below the back
+  syrax:   { glbKey: 'gold',  tint: 0xfff4e0, saddleY: 1.1 },
   vhagar:  { glbKey: 'demon', tint: 0xd8d0c8, saddleY: 1.1 },
 };
 
 const GLB_SRC = {
   red:   () => DRAGON_GLB_RED,
-  quat:  () => DRAGON_GLB_QUAT,
+  gold:  () => DRAGON_GLB_GOLD,
   demon: () => DRAGON_GLB_DEMON,
 };
 

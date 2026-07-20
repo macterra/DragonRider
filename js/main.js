@@ -44,7 +44,7 @@ new THREE.RGBELoader().load(ASSET_SKY_HDR, hdrTex => {
 const maxAniso = renderer.capabilities.getMaxAnisotropy();
 for (const t of world.terrainTex || []) t.anisotropy = maxAniso;
 let dragon = new ModelDragon(scene, 'vhagar');
-const aiDragon = new ModelDragon(scene, 'syrax', 0xb8c8d8);   // Seasmoke circling the Dragonmont
+const aiDragon = new ModelDragon(scene, 'vhagar', 0xb8c8d8);   // Seasmoke circling the Dragonmont
 aiDragon.group.scale.setScalar(0.8);
 
 const firePool = new ParticlePool(scene, 700, true);    // additive flames
