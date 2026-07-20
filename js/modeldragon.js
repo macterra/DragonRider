@@ -1,54 +1,87 @@
 'use strict';
-/* global THREE, DRAGON_GLB_B64 */
+/* global THREE, DRAGON_GLB_DEMON, DRAGON_GLB_RED, DRAGON_GLB_QUAT */
 
 /*
- * ModelDragon — a rigged, animated, fully textured GLB dragon wrapped to expose:
- *   .group  (owned/positioned by main), .update(dt, s), .mouthWorld(out), .setScheme(key)
- *
- * The GLB is loaded once and cloned (SkeletonUtils) for additional instances.
+ * ModelDragon — rigged, animated, textured GLB dragons. Three distinct models:
+ *   caraxes  — red/brown realistic dragon (full skeleton, fireBreath bone)
+ *   syrax    — stylized Quaternius dragon (full skeleton)
+ *   vhagar   — dark realistic demon dragon (full skeleton, fireBreath bone)
  * Embedded as base64 so file:// works (fetch/XHR is blocked there).
  */
 
-const DRAGON_SCHEMES = {
-  caraxes: { tint: 0xffc4b8, name: 'CARAXES' },
-  syrax:   { tint: 0xffe6b3, name: 'SYRAX' },
-  vhagar:  { tint: 0xc4cbb8, name: 'VHAGAR' },
-  seasmoke:{ tint: 0xd0d8e0, name: 'SEASMOKE' },
+const DRAGON_DEFS = {
+  caraxes: { glbKey: 'red',   tint: 0xff9090, saddleY: 1.1 },
+  syrax:   { glbKey: 'quat',  tint: 0xd99a30, saddleY: 2.55 },   // chubby torso: bone sits ~2.5m below the back
+  vhagar:  { glbKey: 'demon', tint: 0xd8d0c8, saddleY: 1.1 },
+};
+
+const GLB_SRC = {
+  red:   () => DRAGON_GLB_RED,
+  quat:  () => DRAGON_GLB_QUAT,
+  demon: () => DRAGON_GLB_DEMON,
 };
 
 const DRAGON_LENGTH = 15;   // nose-to-tail target size, metres
 
-let _sharedGltf = null;
-const _waiters = [];
-function loadSharedDragon(cb) {
-  if (_sharedGltf) return cb(_sharedGltf);
-  _waiters.push(cb);
-  if (_waiters.length > 1) return;
-  new THREE.GLTFLoader().load('data:model/gltf-binary;base64,' + DRAGON_GLB_B64, gltf => {
-    _sharedGltf = gltf;
-    for (const w of _waiters.splice(0)) w(gltf);
+const _gltfCache = {};
+function loadSharedDragon(glbKey, cb) {
+  if (_gltfCache[glbKey]) return cb(_gltfCache[glbKey]);
+  const waitKey = glbKey + '_wait';
+  (_gltfCache[waitKey] = _gltfCache[waitKey] || []).push(cb);
+  if (_gltfCache[waitKey].length > 1) return;
+  new THREE.GLTFLoader().load('data:model/gltf-binary;base64,' + GLB_SRC[glbKey](), gltf => {
+    _gltfCache[glbKey] = gltf;
+    for (const w of _gltfCache[waitKey].splice(0)) w(gltf);
   }, undefined, err => {
-    console.error('dragon.glb failed to load', err);
+    console.error(glbKey + ' dragon failed to load', err);
     const d = document.createElement('div');
-    d.style.cssText = 'position:fixed;top:10px;left:10px;z-index:99;font:14px monospace;color:#f66;background:#000;padding:10px;white-space:pre-wrap;max-width:90%';
-    d.textContent = 'DRAGON LOAD ERROR: ' + (err && (err.message || err.reason || err.toString()));
+    d.style.cssText = 'position:fixed;top:10px;left:10px;z-index:99;font:14px monospace;color:#f66;background:#000;padding:10px;';
+    d.textContent = 'DRAGON LOAD ERROR: ' + (err && (err.message || err.toString()));
     document.body.appendChild(d);
   });
 }
 
+/* world-space bbox of the *skinned* model, replicating the GPU skinning path
+   (Box3.setFromObject only sees the raw bind-pose geometry — wrong here) */
+function posedBBox(root) {
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3(), sk = new THREE.Vector3(), tmp = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    if (!o.isSkinnedMesh) return;
+    const pos = o.geometry.attributes.position,
+          si = o.geometry.attributes.skinIndex,
+          sw = o.geometry.attributes.skinWeight;
+    for (let i = 0; i < pos.count; i += 5) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.bindMatrix);
+      sk.set(0, 0, 0);
+      const w = [sw.getX(i), sw.getY(i), sw.getZ(i), sw.getW(i)],
+            bi = [si.getX(i), si.getY(i), si.getZ(i), si.getW(i)];
+      for (let k = 0; k < 4; k++) {
+        if (!w[k]) continue;
+        m.multiplyMatrices(o.skeleton.bones[bi[k]].matrixWorld, o.skeleton.boneInverses[bi[k]]);
+        sk.addScaledVector(tmp.copy(v).applyMatrix4(m), w[k]);
+      }
+      box.expandByPoint(sk);
+    }
+  });
+  return box;
+}
+
 class ModelDragon {
-  constructor(scene) {
+  constructor(scene, key = 'vhagar', tintOverride = 0) {
+    this.def = DRAGON_DEFS[key] || DRAGON_DEFS.vhagar;
+    this.tintOverride = tintOverride;
+
     this.group = new THREE.Group();   // world transform (owned by main)
     this.inner = new THREE.Group();   // centering / orientation fix
     this.group.add(this.inner);
     scene.add(this.group);
 
     this.ready = false;
-    this.schemeKey = 'caraxes';
-    this.mouthOffset = new THREE.Vector3(0, 0, 1);
-
     this.buildRider();
-    loadSharedDragon(gltf => this.onLoad(gltf));
+    loadSharedDragon(this.def.glbKey, gltf => this.onLoad(gltf));
   }
 
   findBone(re) {
@@ -60,87 +93,95 @@ class ModelDragon {
   onLoad(gltf) {
     this.model = THREE.SkeletonUtils.clone(gltf.scene);
 
-    this.headBone = this.findBone(/^head/i);
-    this.fireBone = this.findBone(/firebreath/i);
-    this.spineBone = this.findBone(/^spine_05/i) || this.findBone(/^spine_04/i);
-    const tailBone = this.findBone(/^tail_30/i) || this.findBone(/^tail_29/i) || this.findBone(/^tail/i);
-
-    this.fix = new THREE.Group();
-    this.fix.add(this.model);
-    this.inner.add(this.fix);
-
-    // animation first — the bind pose may be degenerate; measure after frame 0
+    // animation first — measure the posed model, not the raw bind pose
     this.mixer = new THREE.AnimationMixer(this.model);
     const clip = re => gltf.animations.find(c => re.test(c.name));
     this.flyAction = this.mixer.clipAction(clip(/flying|fly/i) || gltf.animations[0]);
     this.flyAction.play();
     this.mixer.update(0.01);
-    this.inner.updateMatrixWorld(true);
 
-    // normalize size from the actual skeleton span (head -> tail tip)
-    let span = 10;
-    if (this.headBone && tailBone) {
-      span = this.headBone.getWorldPosition(new THREE.Vector3())
-        .distanceTo(tailBone.getWorldPosition(new THREE.Vector3()));
-    } else {
-      const bbox = new THREE.Box3().setFromObject(this.model);
-      span = bbox.getSize(new THREE.Vector3()).z;
-    }
-    const s = DRAGON_LENGTH / Math.max(span, 0.01);
-    this.fix.scale.setScalar(s);
-    this.inner.updateMatrixWorld(true);
+    this.fix = new THREE.Group();
+    this.fix.add(this.model);
+    this.inner.add(this.fix);
 
-    // diagnostics for the debug overlay
-    const bb = new THREE.Box3().setFromObject(this.model).getSize(new THREE.Vector3());
-    this.diag = { span: +span.toFixed(1), bbox: [bb.x, bb.y, bb.z].map(v => Math.round(v)) };
+    // measure in the group's local frame: main.js owns group.position/quaternion
+    // and may already be rotating it (auto-start / reselect while the GLB loads),
+    // which would bake a bogus yaw/pitch into the orientation fix below
+    const savedPos = this.group.position.clone();
+    const savedQuat = this.group.quaternion.clone();
+    this.group.position.set(0, 0, 0);
+    this.group.quaternion.identity();
+    this.group.updateMatrixWorld(true);
 
-    // center on the skeleton's midpoint
-    if (this.headBone && tailBone) {
+    this.headBone = this.findBone(/^head/i);
+    this.fireBone = this.findBone(/firebreath/i);
+    this.spineBone = this.findBone(/^spine_05/i) || this.findBone(/^spine_04/i) ||
+                     this.findBone(/^torso/i) || this.findBone(/^body$/i) || this.findBone(/^body/i);
+    const tailBone = this.findBone(/^tail_30/i) || this.findBone(/^tail_29/i) ||
+                     this.findBone(/^body4/i) || this.findBone(/^tail/i);
+
+    // orient from the posed skeleton: spine (tail->head) -> +Z, dorsal up -> +Y.
+    // Wing bones give the lateral axis, so pitch/roll are corrected too (the
+    // Quaternius rig flies reared-up; a yaw-only fix leaves it vertical).
+    // note: GLTFLoader strips dots from node names (Wing1.L -> Wing1L)
+    const lWing = this.findBone(/^l_wingflapa_01/i) || this.findBone(/^wing1[._]?l$/i);
+    const rWing = this.findBone(/^r_wingflapa_01/i) || this.findBone(/^wing1[._]?r$/i);
+    if (this.headBone && tailBone && lWing && rWing) {
+      const f = this.headBone.getWorldPosition(new THREE.Vector3())
+        .sub(tailBone.getWorldPosition(new THREE.Vector3())).normalize();
+      const w = lWing.getWorldPosition(new THREE.Vector3())
+        .sub(rWing.getWorldPosition(new THREE.Vector3())).normalize();   // right -> left
+      const y = new THREE.Vector3().crossVectors(f, w).normalize();      // dorsal up
+      const x = new THREE.Vector3().crossVectors(y, f).normalize();      // re-orthogonalized lateral
+      const m = new THREE.Matrix4().makeBasis(x, y, f);
+      this.fix.quaternion.setFromRotationMatrix(m).invert();
+      this.group.updateMatrixWorld(true);
+    } else if (this.headBone && tailBone) {
+      // fallback: yaw-only fix on the head->tail axis
       const h = this.headBone.getWorldPosition(new THREE.Vector3());
       const t = tailBone.getWorldPosition(new THREE.Vector3());
-      const mid = h.clone().add(t).multiplyScalar(0.5);
-      // orient: head-tail forward axis -> +Z
       const fwd = h.clone().sub(t);
       this.fix.rotation.y = -Math.atan2(fwd.x, fwd.z);
-      this.inner.updateMatrixWorld(true);               // apply rotation before measuring
-      this.model.position.sub(this.model.worldToLocal(mid));
-    } else {
-      const bbox = new THREE.Box3().setFromObject(this.model);
-      const center = bbox.getCenter(new THREE.Vector3());
-      this.model.position.sub(center);
+      this.group.updateMatrixWorld(true);
     }
 
+    // scale + center from the posed skinned model (bind-pose bboxes lie)
+    const bbox = posedBBox(this.model);
+    const len = Math.max(bbox.getSize(new THREE.Vector3()).z, 0.01);
+    this.fix.scale.multiplyScalar(DRAGON_LENGTH / len);
+    this.group.updateMatrixWorld(true);
+
+    const mid = posedBBox(this.model).getCenter(new THREE.Vector3());
+    this.model.position.sub(this.fix.worldToLocal(mid));
+
+    this.size = posedBBox(this.model).getSize(new THREE.Vector3());   // local frame, debug only
+
+    // restore the flight transform
+    this.group.position.copy(savedPos);
+    this.group.quaternion.copy(savedQuat);
+    this.group.updateMatrixWorld(true);
+
     // materials
-    this.mats = {};
+    this.mats = [];
     this.model.traverse(o => {
-      if (o.isMesh || o.isSkinnedMesh) {
+      if ((o.isMesh || o.isSkinnedMesh) && o.visible) {
         o.castShadow = true;
         o.frustumCulled = false;           // skinned bounds go stale when animating
         const list = Array.isArray(o.material) ? o.material : [o.material];
         for (const m of list) {
-          // the GLB's M/R texture is pure white (metallic=1) -> renders black; use scalars
-          m.metalness = 0.0;
+          m.metalness = 0.0;               // GLB M/R textures render black otherwise
           m.roughness = 0.7;
           m.metalnessMap = null;
           m.roughnessMap = null;
           m.aoMap = null;
-          m.envMapIntensity = 0.45;        // stay saturated under IBL
-          (this.mats[m.name] = this.mats[m.name] || []).push(m);
+          m.envMapIntensity = 0.45;
+          if (!/^eyes$/i.test(m.name)) m.color.set(this.tintOverride || this.def.tint);
+          this.mats.push(m);
         }
       }
     });
 
     this.ready = true;
-    this.setScheme(this.schemeKey);
-  }
-
-  setScheme(key) {
-    if (!DRAGON_SCHEMES[key]) return;
-    this.schemeKey = key;
-    if (!this.ready) return;
-    for (const list of Object.values(this.mats)) {
-      for (const m of list) m.color.set(DRAGON_SCHEMES[key].tint);
-    }
   }
 
   buildRider() {
@@ -169,11 +210,11 @@ class ModelDragon {
 
   /* world-space mouth position (fire emitter origin) */
   mouthWorld(out) {
-    if (this.ready && this.fireBone) return this.fireBone.getWorldPosition(out);
-    if (this.ready && this.headBone) {
+    if (!this.ready) return out.copy(this.group.position);
+    if (this.fireBone) return this.fireBone.getWorldPosition(out);
+    if (this.headBone) {
       this.headBone.getWorldPosition(out);
-      const fwd = _mdFwd.set(0, 0, 1).applyQuaternion(this.group.quaternion);
-      return out.addScaledVector(fwd, 1.5);
+      return out.addScaledVector(_mdFwd.set(0, 0, 1).applyQuaternion(this.group.quaternion), 1.5);
     }
     return out.copy(this.group.position);
   }
@@ -189,11 +230,11 @@ class ModelDragon {
 
     this.mixer.update(dt);
 
-    // rider: glued to the mid-spine so the saddle follows the animation
+    // rider follows the saddle point
     if (this.spineBone) {
       this.spineBone.getWorldPosition(_mdV1);
       this.inner.worldToLocal(_mdV1);
-      this.rider.position.set(_mdV1.x, _mdV1.y + 1.1, _mdV1.z - 0.4);
+      this.rider.position.set(_mdV1.x, _mdV1.y + (this.def.saddleY || 1.1), _mdV1.z - 0.4);
     }
     this.rider.visible = true;
     this.cloak.rotation.x = 0.9 + Math.sin(s.t * 9) * 0.12 + Math.min(0.5, s.speed * 0.004);

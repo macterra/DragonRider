@@ -43,9 +43,8 @@ new THREE.RGBELoader().load(ASSET_SKY_HDR, hdrTex => {
 /* crisp texture sampling at grazing angles */
 const maxAniso = renderer.capabilities.getMaxAnisotropy();
 for (const t of world.terrainTex || []) t.anisotropy = maxAniso;
-const dragon = new ModelDragon(scene);
-const aiDragon = new ModelDragon(scene);          // another dragon circling the Dragonmont
-aiDragon.setScheme('seasmoke');
+let dragon = new ModelDragon(scene, 'vhagar');
+const aiDragon = new ModelDragon(scene, 'syrax', 0xb8c8d8);   // Seasmoke circling the Dragonmont
 aiDragon.group.scale.setScalar(0.8);
 
 const firePool = new ParticlePool(scene, 700, true);    // additive flames
@@ -161,7 +160,8 @@ window.addEventListener('resize', () => {
 /* ---------------- menu / start ---------------- */
 document.querySelectorAll('.dragon-card').forEach(card => {
   card.addEventListener('click', () => {
-    dragon.setScheme(card.dataset.dragon);
+    scene.remove(dragon.group);
+    dragon = new ModelDragon(scene, card.dataset.dragon);
     startGame();
   });
 });
@@ -558,6 +558,8 @@ function loop() {
         fire: firePool.count, smoke: smokePool.count,
         pos: state.pos.toArray().map(v => Math.round(v)),
         started: state.started, paused: state.paused,
+        dready: dragon.ready,
+        dsize: dragon.size ? [dragon.size.x, dragon.size.y, dragon.size.z].map(v => +v.toFixed(1)) : null,
         ship0: world.ships[0].state,
         d0: Math.round(state.pos.distanceTo(world.ships[0].group.position)),
         score: state.score,
@@ -574,7 +576,10 @@ loop();
 const urlParams = new URLSearchParams(location.search);
 const autoDragon = urlParams.get('auto');
 if (autoDragon) {
-  if (DRAGON_SCHEMES[autoDragon]) dragon.setScheme(autoDragon);
+  if (DRAGON_DEFS[autoDragon]) {
+    scene.remove(dragon.group);
+    dragon = new ModelDragon(scene, autoDragon);
+  }
   startGame();
   if (urlParams.get('fire')) input.keys.Space = true;   // test: breathe fire continuously
 

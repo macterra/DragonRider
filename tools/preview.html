@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<!-- Dev tool: isolated GLB preview. Serve repo root over http, open
+     /tools/preview.html?glb=dragon_red&anim=Flying&cam=side
+     Reports a *posed* bbox (sampling skinned vertices) in #info. -->
+<html><head><meta charset="utf-8"><style>body{margin:0}#info{position:fixed;top:8px;left:8px;font:12px monospace;color:#0f0;background:#000a;padding:8px;white-space:pre}</style></head>
+<body>
+<script src="../js/vendor/three.min.js"></script>
+<script src="../js/vendor/GLTFLoader.js"></script>
+<script src="../js/vendor/SkeletonUtils.js"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const glb = q.get('glb') || 'dragon_red';
+const animRe = new RegExp(q.get('anim') || 'fly', 'i');
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x223344);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.01, 5000);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.5); sun.position.set(3, 5, 2); scene.add(sun);
+scene.add(new THREE.GridHelper(20, 20));
+scene.add(new THREE.AxesHelper(5));   // x red, y green, z blue
+
+/* posed bbox: replicate the GPU skinning path (r128):
+   worldV = Σ w · (bone.matrixWorld · boneInverse) · bindMatrix · pos  */
+function posedBBox(root) {
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3(), sk = new THREE.Vector3(), tmp = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  root.updateMatrixWorld(true);
+  root.traverse(o => {
+    if (o.isSkinnedMesh) {
+      const pos = o.geometry.attributes.position,
+            si = o.geometry.attributes.skinIndex,
+            sw = o.geometry.attributes.skinWeight;
+      for (let i = 0; i < pos.count; i += 5) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.bindMatrix);
+        sk.set(0, 0, 0);
+        const wx = sw.getX(i), wy = sw.getY(i), wz = sw.getZ(i), ww = sw.getW(i);
+        const ix = si.getX(i), iy = si.getY(i), iz = si.getZ(i), iw = si.getW(i);
+        for (const [w, bi] of [[wx, ix], [wy, iy], [wz, iz], [ww, iw]]) {
+          if (!w) continue;
+          m.multiplyMatrices(o.skeleton.bones[bi].matrixWorld, o.skeleton.boneInverses[bi]);
+          sk.addScaledVector(tmp.copy(v).applyMatrix4(m), w);
+        }
+        box.expandByPoint(sk);
+      }
+    } else if (o.isMesh) {
+      box.expandByObject(o);
+    }
+  });
+  return box;
+}
+
+new THREE.GLTFLoader().load('../assets/' + glb + '.glb', gltf => {
+  const model = gltf.scene;
+  scene.add(model);
+  model.updateMatrixWorld(true);
+  if (q.get('rebind')) {
+    // repair: bind skinned meshes with their TRUE world matrix (r128 binds too early)
+    model.traverse(o => { if (o.isSkinnedMesh) o.bind(o.skeleton, o.matrixWorld.clone()); });
+  }
+  const mixer = new THREE.AnimationMixer(model);
+  const noAnim = q.get('anim') === 'none';
+  const clip = noAnim ? null : (gltf.animations.find(c => animRe.test(c.name)) || gltf.animations[0]);
+  if (clip) mixer.clipAction(clip).play();
+  mixer.update(0.05);
+
+  const info = document.getElementById('info');
+  const t0 = performance.now();
+  function frame() {
+    requestAnimationFrame(frame);
+    mixer.update(1 / 60);
+    renderer.render(scene, camera);
+    if (performance.now() - t0 > 1000 && !window.__measured) {
+      window.__measured = true;
+      const b = posedBBox(model);
+      const s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
+      let diag = '';
+      model.traverse(o => {
+        if (diag || !o.isSkinnedMesh) return;
+        const g = o.geometry;
+        g.computeBoundingBox();
+        const gs = g.boundingBox.getSize(new THREE.Vector3());
+        const sc = m => new THREE.Vector3().setFromMatrixScale(m);
+        const bone = o.skeleton.bones[1] || o.skeleton.bones[0];
+        diag =
+          '\ngeo bbox: ' + [gs.x, gs.y, gs.z].map(v => v.toExponential(1)).join(' x ') +
+          '\nbindM scale: ' + sc(o.bindMatrix).toArray().map(v => v.toExponential(1)) +
+          ' | meshWorld scale: ' + sc(o.matrixWorld).toArray().map(v => v.toExponential(1)) +
+          '\nbone[1] "' + bone.name + '" world scale: ' + sc(bone.matrixWorld).toArray().map(v => v.toExponential(1)) +
+          ' | boneInv[1] scale: ' + sc(o.skeleton.boneInverses[1] || o.skeleton.boneInverses[0]).toArray().map(v => v.toExponential(1));
+      });
+      const bp = re => { const b = boneObj(re); return b ? b.getWorldPosition(new THREE.Vector3()).toArray().map(v => v.toFixed(2)).join(',') : 'null'; };
+      info.textContent = glb + ' | clip: ' + (clip && clip.name) +
+        '\nposed size: ' + [s.x, s.y, s.z].map(v => v.toFixed(2)).join(' x ') +
+        '\nposed center: ' + [c.x, c.y, c.z].map(v => v.toFixed(2)).join(', ') +
+        '\nhead: ' + bp(/^head/i) + ' | pelvis: ' + bp(/^pelvis/i) + ' | tail30: ' + bp(/^tail_30/i) + diag;
+      // frame the model
+      const r = Math.max(s.x, s.y, s.z);
+      const az = (q.get('cam') === 'side') ? Math.PI / 2 : Math.PI / 4;
+      camera.position.set(Math.sin(az) * r * 1.6, r * 0.5, Math.cos(az) * r * 1.6).add(c);
+      camera.lookAt(c);
+    }
+  }
+  function boneObj(re) {
+    let n = null;
+    model.traverse(o => { if (!n && o.isBone && re.test(o.name)) n = o; });
+    return n;
+  }
+  frame();
+}, undefined, err => { document.getElementById('info').textContent = 'LOAD ERROR ' + err; });
+</script>
+<div id="info">loading…</div>
+</body></html>
