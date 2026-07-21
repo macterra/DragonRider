@@ -444,6 +444,13 @@ class World {
   }
 
   /* ---------------- ocean ---------------- */
+  /* JS twin of the ocean vertex shader's swell — so ships can ride the waves */
+  waveHeight(x, z, t) {
+    return Math.sin(x * 0.06 + t * 0.9) * 1.2
+         + Math.sin(z * 0.045 - t * 0.7) * 1.5
+         + Math.sin((x + z) * 0.02 + t * 0.4) * 2.2;
+  }
+
   buildOcean() {
     const geo = new THREE.PlaneGeometry(7200, 7200, 150, 150);
     geo.rotateX(-Math.PI / 2);
@@ -975,7 +982,8 @@ class World {
         // stay inside the bay ellipse and off the shallows
         const ex = (p.x - b.x) / b.rx, ez = (p.z - b.z) / b.rz;
         if (ex * ex + ez * ez > 1 || terrainHeight(p.x, p.z) > -4) s.heading += Math.PI * 0.7 * dt;
-        p.y = Math.sin(t * 0.9 + s.phase) * 0.35;
+        // ride the swell (the ocean's swells are +-5 m; a fixed bob left hulls awash)
+        p.y = this.waveHeight(p.x, p.z, t) * 0.85 + Math.sin(t * 0.9 + s.phase) * 0.25;
         s.group.rotation.y = s.heading;
         s.group.rotation.z = Math.sin(t * 0.7 + s.phase) * 0.05;
         s.group.rotation.x = Math.sin(t * 0.55 + s.phase * 2) * 0.03;
