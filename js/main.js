@@ -436,9 +436,10 @@ function updateFire(dt) {
 /* ---------------- per-frame: camera ---------------- */
 const camPos = new THREE.Vector3().copy(SPAWN).add(new THREE.Vector3(-10, 6, -20));
 function updateCamera(dt) {
+  const ds = dragon.sizeScale || 1;   // keep framing consistent per dragon size
   const back = _v1.set(0, 0, -1).applyQuaternion(dragon.group.quaternion);
   const up = _v2.set(0, 1, 0).applyQuaternion(dragon.group.quaternion);
-  const desired = _v3.copy(state.pos).addScaledVector(back, 11).addScaledVector(up, 3.4);
+  const desired = _v3.copy(state.pos).addScaledVector(back, 11 * ds).addScaledVector(up, 3.4 * ds);
   camPos.lerp(desired, 1 - Math.exp(-dt * 6));
 
   // keep the camera out of the ground
@@ -446,7 +447,7 @@ function updateCamera(dt) {
   if (camPos.y < ground + 1.6) camPos.y = ground + 1.6;
 
   camera.position.copy(camPos);
-  const look = _v4.copy(state.pos).addScaledVector(back, -14).addScaledVector(up, 1.2);
+  const look = _v4.copy(state.pos).addScaledVector(back, -14 * ds).addScaledVector(up, 1.2 * ds);
   camera.lookAt(look);
 
   const boost = !!input.keys.ShiftLeft || !!input.keys.ShiftRight;

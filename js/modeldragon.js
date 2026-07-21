@@ -12,9 +12,10 @@
  */
 
 const DRAGON_DEFS = {
-  caraxes: { glbKey: 'red',   tint: 0xff9090, saddleY: 1.1 },
-  syrax:   { glbKey: 'gold',  tint: 0xfff4e0, saddleY: 1.1 },
-  vhagar:  { glbKey: 'demon', tint: 0xd8d0c8, saddleY: 1.1 },
+  // size = overall scale, stretch = per-axis [x,y,z] body proportions
+  caraxes: { glbKey: 'red',   tint: 0xff9090, saddleY: 1.1, size: 1.0,  stretch: [0.92, 0.9, 1.15] },  // lean, serpentine Blood Wyrm
+  syrax:   { glbKey: 'gold',  tint: 0xfff4e0, saddleY: 1.1, size: 0.85, stretch: [1.0, 1.0, 0.95] },   // smallest, compact
+  vhagar:  { glbKey: 'demon', tint: 0xd8d0c8, saddleY: 1.1, size: 1.3,  stretch: [1.06, 1.05, 1.0] },  // huge, bulky Queen of All Dragons
 };
 
 const GLB_SRC = {
@@ -150,7 +151,10 @@ class ModelDragon {
     // scale + center from the posed skinned model (bind-pose bboxes lie)
     const bbox = posedBBox(this.model);
     const len = Math.max(bbox.getSize(new THREE.Vector3()).z, 0.01);
-    this.fix.scale.multiplyScalar(DRAGON_LENGTH / len);
+    const d = this.def, k = DRAGON_LENGTH / len * (d.size || 1);
+    const st = d.stretch || [1, 1, 1];
+    this.fix.scale.set(k * st[0], k * st[1], k * st[2]);
+    this.sizeScale = d.size || 1;
     this.group.updateMatrixWorld(true);
 
     const mid = posedBBox(this.model).getCenter(new THREE.Vector3());
@@ -236,7 +240,8 @@ class ModelDragon {
     if (this.spineBone) {
       this.spineBone.getWorldPosition(_mdV1);
       this.inner.worldToLocal(_mdV1);
-      this.rider.position.set(_mdV1.x, _mdV1.y + (this.def.saddleY || 1.1), _mdV1.z - 0.4);
+      const st = this.def.stretch || [1, 1, 1];
+      this.rider.position.set(_mdV1.x, _mdV1.y + (this.def.saddleY || 1.1) * this.sizeScale * st[1], _mdV1.z - 0.4);
     }
     this.rider.visible = true;
     this.cloak.rotation.x = 0.9 + Math.sin(s.t * 9) * 0.12 + Math.min(0.5, s.speed * 0.004);
